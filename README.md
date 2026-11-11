@@ -1,13 +1,37 @@
 # heatpump-mcp
 
-Voice control for a Fujitsu heat pump through the FGLair cloud, as an MCP server and a claude-voice plugin.
+Voice control for a Fujitsu heat pump through the FGLair cloud, as an MCP
+server and a [claude-voice](https://github.com/roykollensvendsen/claude-voice)
+plugin.
 
-<!-- not run: there is nothing to run until the walking skeleton exists -->
-```bash
-# Replace this block with what heatpump-mcp actually does, as a ```console block
-# whose output is what the command really prints. The suite runs those blocks
-# and compares them, so an example here cannot quietly stop being true.
+You ask "how warm is it in the living room?", and the voice reads the answer
+from the heat pump: whether it is on, what it is doing, the temperature it is
+set to, the room and outdoor temperatures, and the fan.
+
+## Try it without a heat pump
+
+The pretend unit touches no network, and every answer says it is simulated:
+
+```console
+$ uv run heatpump-mcp status --simulate
+Simulated: The heat pump is on, heating to 21 degrees. The room is 20.5 degrees, and it is 3 degrees outside. The fan is on auto.
 ```
+
+The same tools are served to a voice session over stdio, and the server stops
+when its input closes:
+
+```console
+$ uv run heatpump-mcp serve --simulate < /dev/null
+```
+
+## The tools
+
+| Tool | What it does |
+| --- | --- |
+| `heatpump_status` | Reads the unit, changing nothing. A reading is reused for 30 seconds. |
+
+Every answer has `say`, a sentence to read aloud as it is, and `success`,
+which a program can read.
 
 ## The gates
 
