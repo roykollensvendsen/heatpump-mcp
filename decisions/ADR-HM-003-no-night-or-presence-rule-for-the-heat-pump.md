@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed 2026-11-11, for the owner to accept or change. The write-plugin
+Accepted 2026-11-11 by the owner, by voice, as the owner's own decision. The write-plugin
 checklist (item 8) asks each plugin to decide its night and presence rules when
 it is designed, and to write the decision down, even when the answer is none.
 
