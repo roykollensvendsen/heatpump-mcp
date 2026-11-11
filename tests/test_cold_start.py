@@ -23,7 +23,9 @@ TOOLS = {"heatpump_status", "heatpump_set_request", "heatpump_set_confirm"}
 
 def _listed(args, env=None):
     async def run():
-        params = StdioServerParameters(command=sys.executable, args=["-m", "heatpump_mcp.cli", *args], env=env)
+        params = StdioServerParameters(
+            command=sys.executable, args=["-m", "heatpump_mcp.cli", *args], env=env
+        )
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
             await session.initialize()
             return {tool.name for tool in (await session.list_tools()).tools}
