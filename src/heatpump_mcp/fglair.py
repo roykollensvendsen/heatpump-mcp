@@ -68,11 +68,13 @@ class FglairUnit:
         *,
         unit_name: str | None = None,
         is_heat_pump: Callable[[object], bool] = _is_heat_pump,
+        config_file: str = "config.toml",
     ) -> None:
         """Use `api`, signed in or not; `unit_name` picks the unit when the account has several."""
         self._api = api
         self._unit_name = unit_name
         self._is_heat_pump = is_heat_pump
+        self._config_file = config_file
         self._device: Any = None
 
     async def close(self) -> None:
@@ -98,8 +100,8 @@ class FglairUnit:
             units = [d for d in units if str(d.device_name).casefold() == wanted]
         if not units:
             msg = (
-                "Fujitsu's cloud lists no heat pump with the name in config.toml. "
-                'Write it as the FGLair app shows it, such as: unit = "Living room"'
+                f"Fujitsu's cloud lists no heat pump with the name in {self._config_file}. "
+                'Write it there as the FGLair app shows it, such as: unit = "Living room"'
                 if self._unit_name
                 else "Fujitsu's cloud lists no heat pump for this login. "
                 "Check that the FGLair app shows the heat pump when signed in with the same login."
@@ -107,14 +109,15 @@ class FglairUnit:
             raise UnitUnavailableError(msg)
         if len(units) > 1:
             msg = (
-                "Fujitsu's cloud lists more than one heat pump. Write the one to use in config.toml, "
+                "Fujitsu's cloud lists more than one heat pump. "
+                f"Write the one to use in {self._config_file}, "
                 'as the FGLair app names it, such as: unit = "Living room"'
             )
             raise UnitUnavailableError(msg)
         if not units[0].is_online():
             msg = (
                 "The heat pump is offline in the FGLair cloud. "
-                "Check that it has power and that the FGLair app shows it online."
+                "Check that it has power and a network connection, and that the FGLair app shows it online."
             )
             raise UnitUnavailableError(msg)
         return units[0]
@@ -193,7 +196,7 @@ def connect(settings: Settings) -> FglairUnit:
         europe=settings.region == "eu",
         timeout=API_TIMEOUT,
     )
-    return FglairUnit(api, unit_name=settings.unit_name)
+    return FglairUnit(api, unit_name=settings.unit_name, config_file=settings.config_file)
 
 
 class LoginFolder:
