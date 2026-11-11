@@ -19,4 +19,4 @@ scripts/.mutate-recovery.json
 
 # The FGLair login belongs in ~/.config/heatpump-mcp, never here.
 fglair-*
-.claude/settings.local.json
+.claude/settings.local.json*
