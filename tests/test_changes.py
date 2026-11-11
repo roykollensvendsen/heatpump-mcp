@@ -15,7 +15,15 @@ from heatpump_mcp.service import (
     Refused,
 )
 from heatpump_mcp.simulator import SimulatedUnit
-from heatpump_mcp.unit import ChangeNotSentError, Fan, Mode, Reading, Setting, UnitUnavailableError
+from heatpump_mcp.unit import (
+    ChangeNotSentError,
+    ChangeNotSupportedError,
+    Fan,
+    Mode,
+    Reading,
+    Setting,
+    UnitUnavailableError,
+)
 
 START = Reading(on=True, mode=Mode.HEAT, set_temp=21.0, room_temp=20.5, outdoor_temp=3.0, fan=Fan.AUTO)
 
@@ -245,3 +253,16 @@ def test_the_status_after_a_change_is_read_fresh():
     _ask_and_confirm(service, Setting.MODE, "cool")
     status = _run(service.status())
     assert status.reading == dataclasses.replace(START, mode=Mode.COOL)
+
+
+def test_a_change_the_unit_cannot_make_is_refused_and_not_asked_again():
+    class NoQuietFan(SimulatedUnit):
+        async def apply(self, _change):
+            raise ChangeNotSupportedError
+
+    service = _service(NoQuietFan(start=START))
+    question = _run(service.request(Setting.FAN, "quiet"))
+    answer = _run(service.confirm(question.token))
+    assert isinstance(answer, Refused)
+    assert "cannot do that" in answer.say
+    assert isinstance(_run(service.confirm(question.token)), Refused)

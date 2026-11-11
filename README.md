@@ -24,6 +24,38 @@ when its input closes:
 $ uv run heatpump-mcp serve --simulate < /dev/null
 ```
 
+## The real heat pump
+
+The real unit is reached through Fujitsu's FGLair cloud, the same way Home
+Assistant's built-in FGLair integration reaches it
+([ADR-HM-001](decisions/ADR-HM-001-reach-the-unit-through-fglair-with-ayla-iot-unofficial.md)).
+It needs the login of the FGLair app, in two files that only the owner can
+read:
+
+<!-- not run: it writes the owner's real login -->
+```bash
+mkdir -p ~/.config/heatpump-mcp && cd ~/.config/heatpump-mcp
+printf '%s' 'the-email-you-sign-in-with' > fglair-username
+printf '%s' 'your-fglair-password' > fglair-password
+chmod 600 fglair-username fglair-password
+```
+
+An optional `config.toml` beside them holds `region` (`eu`, the default;
+`default` for the Americas and elsewhere; or `cn`) and `unit`, the unit's
+name in the FGLair app, which is needed only when the account has more than
+one. A file anyone else can read is refused.
+
+Until the login is there, the server still starts, and every answer says
+what to set up:
+
+```console
+$ uv run heatpump-mcp status --config-dir /nonexistent
+The heat pump's login is not set up: Write the FGLair login to /nonexistent/fglair-username, one value per file, then chmod 600 it.
+```
+
+With the login in place, `uv run heatpump-mcp serve` serves the real unit,
+and `uv run heatpump-mcp status` reads it once.
+
 ## The tools
 
 | Tool | What it does |

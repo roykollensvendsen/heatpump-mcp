@@ -79,6 +79,10 @@ class ChangeNotSentError(UnitUnavailableError):
     """The change certainly never reached the unit: it failed before it was sent."""
 
 
+class ChangeNotSupportedError(ChangeNotSentError):
+    """The unit cannot make this change at all, such as a fan speed it does not have."""
+
+
 class Unit(Protocol):
     """A heat pump that can be read and changed."""
 
