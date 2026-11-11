@@ -145,6 +145,14 @@ _WHAT = {
     Setting.FAN: "fan speed",
 }
 
+
+def _not_sent(error: ChangeNotSentError) -> str:
+    """Why a change never left: the driver's reason, which says what to do, or else a retry."""
+    if str(error):
+        return f"Nothing changed: {error}"
+    return "I could not reach the heat pump, so nothing changed. Say yes to try again."
+
+
 _PARSERS: dict[Setting, Callable[[str], Change | Refused]] = {
     Setting.POWER: _power,
     Setting.MODE: _mode,
@@ -247,12 +255,7 @@ class HeatpumpService:
         except ChangeNotSentError as error:
             # RULE: a change that never reached the unit can be confirmed again
             self._pending = pending
-            # The driver's own reason already says what to do; without one, a yes tries again.
-            return Refused(
-                f"Nothing changed: {error}"
-                if str(error)
-                else "I could not reach the heat pump, so nothing changed. Say yes to try again."
-            )
+            return Refused(_not_sent(error))
         except (UnitUnavailableError, TimeoutError):
             pass  # it may have arrived: read it back, and never send it again
         self._last_sent = self._clock()
