@@ -11,7 +11,7 @@ import sys
 
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService, Status
-from heatpump_mcp.settings import SettingsError, config_folder, load_settings
+from heatpump_mcp.settings import config_folder
 from heatpump_mcp.simulator import SimulatedUnit
 
 #: Every verb this command has. The documentation test requires each one to
@@ -23,13 +23,10 @@ def _service(*, simulate: bool, folder: pathlib.Path) -> HeatpumpService:
     if simulate:
         return HeatpumpService(SimulatedUnit())
     # The library is imported only for the real unit, so --simulate never loads it.
-    from heatpump_mcp.fglair import MissingLogin, connect  # noqa: PLC0415
+    from heatpump_mcp.fglair import LoginFolder  # noqa: PLC0415
 
-    try:
-        return HeatpumpService(connect(load_settings(folder)))
-    except SettingsError as error:
-        # The server still starts, so the voice can say what to set up.
-        return HeatpumpService(MissingLogin(f"The heat pump's login is not set up: {error}"))
+    # The login is read at each call, so the server starts without one and says what to set up.
+    return HeatpumpService(LoginFolder(folder))
 
 
 async def _status_once(service: HeatpumpService) -> Status:

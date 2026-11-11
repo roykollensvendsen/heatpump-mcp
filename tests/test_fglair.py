@@ -185,14 +185,78 @@ def test_connecting_builds_the_cloud_client_without_sending_anything():
     assert isinstance(unit, FglairUnit)
 
 
-def test_until_the_login_is_set_up_nothing_is_sent_and_the_reason_is_given():
-    from heatpump_mcp.fglair import MissingLogin  # noqa: PLC0415
+def _write_login(folder, username="someone@example.com", password="made-up"):  # noqa: S107 - made up
+    for name, value in (("fglair-username", username), ("fglair-password", password)):
+        path = folder / f"{name}"
+        path.write_text(value)
+        path.chmod(0o600)
 
-    missing = MissingLogin("The heat pump's login is not set up.")
+
+class Builds:
+    """Stands in for connecting: each new login gets a fresh fake cloud."""
+
+    def __init__(self):
+        self.apis = []
+
+    def __call__(self, settings):
+        api = FakeApi()
+        api.settings = settings
+        api.websession = FakeSession()
+        self.apis.append(api)
+        return _unit(api)
+
+
+def _from_folder(folder):
+    from heatpump_mcp.fglair import LoginFolder  # noqa: PLC0415
+
+    builds = Builds()
+    return LoginFolder(folder, build=builds), builds
+
+
+def test_until_the_login_is_set_up_nothing_is_sent_and_the_reason_is_given(tmp_path):
+    unit, builds = _from_folder(tmp_path)
     with pytest.raises(UnitUnavailableError, match="not set up"):
-        asyncio.run(missing.read())
-    with pytest.raises(ChangeNotSentError):
-        asyncio.run(missing.apply(Change(Setting.FAN, Fan.LOW)))
+        asyncio.run(unit.read())
+    with pytest.raises(ChangeNotSentError, match="not set up"):
+        asyncio.run(unit.apply(Change(Setting.FAN, Fan.LOW)))
+    assert builds.apis == []
+
+
+def test_a_login_written_after_the_start_is_used_without_a_restart(tmp_path):
+    unit, builds = _from_folder(tmp_path)
+    with pytest.raises(UnitUnavailableError):
+        asyncio.run(unit.read())
+    _write_login(tmp_path)
+    assert asyncio.run(unit.read()).set_temp == 21.0
+    assert len(builds.apis) == 1
+
+
+def test_a_login_entered_again_is_used_without_a_restart(tmp_path):
+    _write_login(tmp_path, password="the-old-one")  # noqa: S106 - made up
+    unit, builds = _from_folder(tmp_path)
+
+    async def read_twice():
+        await unit.read()
+        _write_login(tmp_path, password="the-new-one")  # noqa: S106 - made up
+        await unit.read()
+
+    asyncio.run(read_twice())
+    old, new = builds.apis
+    assert old.websession.closed
+    assert new.settings.password == "the-new-one"  # noqa: S105 - made up
+
+
+def test_an_unchanged_login_keeps_the_signed_in_cloud_client(tmp_path):
+    _write_login(tmp_path)
+    unit, builds = _from_folder(tmp_path)
+
+    async def read_twice():
+        await unit.read()
+        await unit.read()
+
+    asyncio.run(read_twice())
+    assert len(builds.apis) == 1
+    assert builds.apis[0].sign_ins == 1
 
 
 class FakeSession:
