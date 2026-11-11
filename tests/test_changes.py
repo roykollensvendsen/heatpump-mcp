@@ -266,3 +266,10 @@ def test_a_change_the_unit_cannot_make_is_refused_and_not_asked_again():
     assert isinstance(answer, Refused)
     assert "cannot do that" in answer.say
     assert isinstance(_run(service.confirm(question.token)), Refused)
+
+
+@pytest.mark.parametrize("value", ["21,5", "21,5 degrees", " 21,5°C "])
+def test_a_temperature_with_a_decimal_comma_is_understood(value):
+    question = _run(_service().request(Setting.TEMPERATURE, value))
+    assert isinstance(question, Question), question
+    assert question.change.value == 21.5
