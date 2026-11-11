@@ -17,7 +17,7 @@ from ayla_iot_unofficial import AylaAuthError, AylaError, new_ayla_api
 from ayla_iot_unofficial.fujitsu_consts import FGLAIR_APP_CREDENTIALS, FanSpeed, OpMode
 from ayla_iot_unofficial.fujitsu_hvac import DeviceOffline, FujitsuHVAC, SettingNotSupportedError
 
-from heatpump_mcp.settings import ENTER_LOGIN
+from heatpump_mcp.settings import ENTER_LOGIN, SettingsError, load_settings
 from heatpump_mcp.unit import (
     Change,
     ChangeNotSentError,
@@ -30,6 +30,7 @@ from heatpump_mcp.unit import (
 )
 
 if TYPE_CHECKING:
+    import pathlib
     from collections.abc import Callable
 
     from heatpump_mcp.settings import Settings
@@ -184,20 +185,43 @@ def connect(settings: Settings) -> FglairUnit:
     return FglairUnit(api, unit_name=settings.unit_name)
 
 
-class MissingLogin:
-    """Stands in for the unit until the login is set up, saying what to do."""
+class LoginFolder:
+    """The unit, from the login files as they are at each call, so a fixed login needs no restart."""
 
-    def __init__(self, reason: str) -> None:
-        """`reason` names the file to fix, never its contents."""
-        self._reason = reason
+    def __init__(
+        self,
+        folder: pathlib.Path,
+        *,
+        build: Callable[[Settings], FglairUnit] = connect,
+    ) -> None:
+        """Read the login from `folder` on every call; `build` turns a login into a unit."""
+        self._folder = folder
+        self._build = build
+        self._settings: Settings | None = None
+        self._unit: FglairUnit | None = None
+
+    async def _current(self, failure: type[UnitUnavailableError]) -> FglairUnit:
+        try:
+            settings = load_settings(self._folder)
+        except SettingsError as error:
+            # The reason names the file to fix, never its contents.
+            msg = f"The heat pump's login is not set up: {error}"
+            raise failure(msg) from None
+        # RULE: a login entered again is used without a restart
+        if self._unit is None or settings != self._settings:
+            await self.close()
+            self._settings, self._unit = settings, self._build(settings)
+        return self._unit
 
     async def read(self) -> Reading:
-        """Refuse, with the reason."""
-        raise UnitUnavailableError(self._reason)
+        """Read the unit with the login as it is now."""
+        return await (await self._current(UnitUnavailableError)).read()
 
-    async def apply(self, change: Change) -> None:  # noqa: ARG002 - the Unit interface
-        """Refuse, with the reason; nothing is sent."""
-        raise ChangeNotSentError(self._reason)
+    async def apply(self, change: Change) -> None:
+        """Send `change` with the login as it is now; nothing is sent without one."""
+        await (await self._current(ChangeNotSentError)).apply(change)
 
     async def close(self) -> None:
-        """Nothing to close: nothing was ever opened."""
+        """Close the cloud connection, if one was opened."""
+        if self._unit is not None:
+            await self._unit.close()

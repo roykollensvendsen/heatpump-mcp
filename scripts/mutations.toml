@@ -104,3 +104,9 @@ name = "when the levels main kept are missing, the base is measured"
 file = "scripts/ratchet.py"
 find = '^    return measure_base\(\)$'
 replace = 'return {}'
+
+[[rule]]
+name = "a login entered again is used without a restart"
+file = "src/heatpump_mcp/fglair.py"
+find = 'if self\._unit is None or settings != self\._settings:'
+replace = 'if self._unit is None:'
