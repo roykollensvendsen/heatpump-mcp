@@ -138,6 +138,17 @@ class FglairUnit:
         self._device = device
         return reading
 
+    async def ready(self) -> None:
+        """Sign in and find the unit, so the send that follows is only the send."""
+        try:
+            await self._signed_in()
+            if self._device is None:
+                self._device = await self._find()
+        except UnitUnavailableError as error:
+            raise ChangeNotSentError(str(error)) from None
+        except CLOUD_ERRORS:
+            raise ChangeNotSentError from None
+
     async def apply(self, change: Change) -> None:
         """Send `change` through the one setter Home Assistant uses for it."""
         try:
@@ -216,6 +227,10 @@ class LoginFolder:
     async def read(self) -> Reading:
         """Read the unit with the login as it is now."""
         return await (await self._current(UnitUnavailableError)).read()
+
+    async def ready(self) -> None:
+        """Sign in with the login as it is now; nothing is sent."""
+        await (await self._current(ChangeNotSentError)).ready()
 
     async def apply(self, change: Change) -> None:
         """Send `change` with the login as it is now; nothing is sent without one."""

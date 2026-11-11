@@ -16,6 +16,7 @@ from heatpump_mcp.service import (
     POLL_SECONDS,
     READ_BACK_SECONDS,
     READ_SECONDS,
+    READY_SECONDS,
     SEND_SECONDS,
     Done,
     HeatpumpService,
@@ -32,7 +33,9 @@ MARGIN = 2.0
 LONGEST = {
     "status": READ_SECONDS,
     "request": READ_SECONDS,
-    "confirm: send, then read back until the window closes": SEND_SECONDS + READ_BACK_SECONDS,
+    "confirm: sign in, send, then read back until the window closes": (
+        READY_SECONDS + SEND_SECONDS + READ_BACK_SECONDS
+    ),
 }
 
 
@@ -81,9 +84,13 @@ def test_reading_back_never_starts_a_read_that_would_end_after_the_window():
 
 
 class Hanging(SimulatedUnit):
-    def __init__(self, *, hang_read=False, hang_apply=False):
+    def __init__(self, *, hang_read=False, hang_apply=False, hang_ready=False):
         super().__init__()
-        self.hang_read, self.hang_apply = hang_read, hang_apply
+        self.hang_read, self.hang_apply, self.hang_ready = hang_read, hang_apply, hang_ready
+
+    async def ready(self):
+        if self.hang_ready:
+            await asyncio.sleep(60)
 
     async def read(self):
         if self.hang_read:
@@ -100,6 +107,7 @@ class Hanging(SimulatedUnit):
 def short_limits(monkeypatch):
     monkeypatch.setattr(service_module, "READ_SECONDS", 0.05)
     monkeypatch.setattr(service_module, "SEND_SECONDS", 0.05)
+    monkeypatch.setattr(service_module, "READY_SECONDS", 0.05)
     monkeypatch.setattr(service_module, "POLL_SECONDS", 0.01)
     monkeypatch.setattr(service_module, "READ_BACK_SECONDS", 0.2)
 
@@ -126,4 +134,23 @@ def test_a_change_that_may_have_reached_the_unit_is_read_back_and_never_sent_aga
     assert isinstance(first, Done)
     assert not first.confirmed
     assert "no open question" in second.say
+    assert len(unit.applied) == 1
+
+
+@pytest.mark.usefixtures("short_limits")
+def test_a_sign_in_that_times_out_is_never_reported_as_sent():
+    unit = Hanging(hang_ready=True)
+    service = HeatpumpService(unit)
+
+    async def ask_and_confirm_twice():
+        question = await service.request(Setting.FAN, "low")
+        first = await service.confirm(question.token)
+        unit.hang_ready = False
+        second = await service.confirm(question.token)  # at once: no change was sent, so no wait
+        return first, second
+
+    first, second = asyncio.run(ask_and_confirm_twice())
+    assert not isinstance(first, Done)
+    assert "nothing changed" in first.say
+    assert isinstance(second, Done)
     assert len(unit.applied) == 1

@@ -45,9 +45,13 @@ TOKEN_SECONDS = 30.0
 READ_SECONDS = 6.0
 #: The longest sending one change may take.
 SEND_SECONDS = 3.0
-#: How long a confirm reads the unit back for, after sending. With SEND_SECONDS
-#: it stays inside the Claude app's 15 seconds for a tool (the plugin standard, rule 3).
-READ_BACK_SECONDS = 10.0
+#: The longest signing in and finding the unit may take, before the send starts.
+#: The token is usually still fresh from the question, so this is most often instant.
+READY_SECONDS = 2.0
+#: How long a confirm reads the unit back for, after sending. With READY_SECONDS and
+#: SEND_SECONDS it stays inside the Claude app's 15 seconds for a tool (the plugin
+#: standard, rule 3); it leaves room for one read, as the ten seconds before it did.
+READ_BACK_SECONDS = 8.0
 #: How long between two readings while waiting for the change to show.
 POLL_SECONDS = 1.5
 
@@ -146,10 +150,10 @@ _WHAT = {
 }
 
 
-def _not_sent(error: ChangeNotSentError) -> str:
+def _not_sent(reason: str) -> str:
     """Why a change never left: the driver's reason, which says what to do, or else a retry."""
-    if str(error):
-        return f"Nothing changed: {error}"
+    if reason:
+        return f"Nothing changed: {reason}"
     return "I could not reach the heat pump, so nothing changed. Say yes to try again."
 
 
@@ -246,6 +250,21 @@ class HeatpumpService:
             return Refused(
                 f"I change the heat pump only once every 10 seconds. Say yes again in {wait} seconds."
             )
+        refused = await self._send(pending)
+        if refused is not None:
+            return refused
+        self._last_sent = self._clock()
+        return await self._read_back(pending.change)
+
+    async def _send(self, pending: _Pending) -> Refused | None:
+        """Sign in, then send the change once; a Refused when it certainly never left."""
+        try:
+            async with asyncio.timeout(READY_SECONDS):
+                await self._unit.ready()
+        # RULE: a sign-in that times out is never reported as sent
+        except (UnitUnavailableError, TimeoutError) as error:
+            self._pending = pending  # nothing was sent, so the yes still stands
+            return Refused(_not_sent(str(error)))
         try:
             async with asyncio.timeout(SEND_SECONDS):
                 await self._unit.apply(pending.change)
@@ -255,11 +274,10 @@ class HeatpumpService:
         except ChangeNotSentError as error:
             # RULE: a change that never reached the unit can be confirmed again
             self._pending = pending
-            return Refused(_not_sent(error))
+            return Refused(_not_sent(str(error)))
         except (UnitUnavailableError, TimeoutError):
             pass  # it may have arrived: read it back, and never send it again
-        self._last_sent = self._clock()
-        return await self._read_back(pending.change)
+        return None
 
     async def _read_back(self, change: Change) -> Done:
         """Read the unit until it shows `change`, for at most READ_BACK_SECONDS; never send again."""

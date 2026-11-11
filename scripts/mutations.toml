@@ -110,3 +110,9 @@ name = "a login entered again is used without a restart"
 file = "src/heatpump_mcp/fglair.py"
 find = 'if self\._unit is None or settings != self\._settings:'
 replace = 'if self._unit is None:'
+
+[[rule]]
+name = "a sign-in that times out is never reported as sent"
+file = "src/heatpump_mcp/service.py"
+find = 'except \(UnitUnavailableError, TimeoutError\) as error:'
+replace = 'except UnitUnavailableError as error:'

@@ -279,3 +279,23 @@ def test_closing_a_unit_never_read_sends_nothing():
     api.websession = None
     asyncio.run(_unit(api).close())
     assert api.sign_ins == 0
+
+
+def test_getting_ready_signs_in_and_finds_the_unit_without_sending_anything():
+    api = FakeApi()
+    unit = _unit(api)
+    asyncio.run(unit.ready())
+    assert api.sign_ins == 1
+    assert api.devices[0].calls == []
+
+
+def test_a_unit_that_cannot_get_ready_was_certainly_sent_nothing():
+    with pytest.raises(ChangeNotSentError, match="refused the login"):
+        asyncio.run(_unit(FakeApi(refuse_login=True)).ready())
+
+
+def test_without_a_login_getting_ready_says_what_to_set_up(tmp_path):
+    unit, builds = _from_folder(tmp_path)
+    with pytest.raises(ChangeNotSentError, match="not set up"):
+        asyncio.run(unit.ready())
+    assert builds.apis == []
