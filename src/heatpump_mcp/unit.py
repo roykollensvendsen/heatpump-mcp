@@ -44,13 +44,44 @@ class Reading:
     fan: Fan | None
 
 
+class Setting(StrEnum):
+    """The only things this plugin ever changes on the unit, one at a time."""
+
+    POWER = "power"
+    MODE = "mode"
+    TEMPERATURE = "temperature"
+    FAN = "fan"
+
+
+@dataclass(frozen=True)
+class Change:
+    """One change to send: `value` is a bool for power, a Mode, a temperature in Celsius, or a Fan."""
+
+    setting: Setting
+    value: bool | Mode | float | Fan
+
+    def shown_by(self, reading: Reading) -> bool:
+        """Whether `reading` shows this change made."""
+        if self.setting is Setting.POWER:
+            return reading.on is self.value
+        if self.setting is Setting.MODE:
+            return reading.on and reading.mode is self.value
+        if self.setting is Setting.TEMPERATURE:
+            return reading.set_temp == self.value
+        return reading.fan is self.value
+
+
 class UnitUnavailableError(Exception):
     """The unit, or the cloud in front of it, did not answer."""
 
 
 class Unit(Protocol):
-    """A heat pump that can be read."""
+    """A heat pump that can be read and changed."""
 
     async def read(self) -> Reading:
         """The unit's settings and temperatures now; raises UnitUnavailableError."""
+        ...
+
+    async def apply(self, change: Change) -> None:
+        """Send one change; raises UnitUnavailableError when it did not reach the unit."""
         ...

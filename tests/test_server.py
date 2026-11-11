@@ -3,6 +3,9 @@
 
 import asyncio
 
+import pytest
+from mcp.server.mcpserver.exceptions import ToolError
+
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService
 from heatpump_mcp.simulator import SimulatedUnit
@@ -27,3 +30,39 @@ def test_the_status_gives_each_field_a_program_can_read():
     answer = _call(server, "heatpump_status")
     assert set(answer["unit"]) == {"on", "mode", "set_temp", "room_temp", "outdoor_temp", "fan"}
     assert "simulated" not in answer
+
+
+def test_the_server_offers_exactly_status_request_and_confirm():
+    names = {t.name for t in asyncio.run(build_server(HeatpumpService(SimulatedUnit())).list_tools())}
+    assert names == {"heatpump_status", "heatpump_set_request", "heatpump_set_confirm"}
+
+
+def test_a_spoken_yes_changes_the_simulated_unit_and_says_so():
+    unit = SimulatedUnit()
+    server = build_server(HeatpumpService(unit, sleep=_no_wait), simulated=True)
+    question = _call(server, "heatpump_set_request", setting="temperature", value="23")
+    assert (
+        question["say"]
+        == "Simulated: The heat pump is set to 21 degrees. Do you want me to set it to 23 degrees?"
+    )
+    done = _call(server, "heatpump_set_confirm", token=question["token"])
+    assert done["success"] is True
+    assert done["say"] == "Simulated: Done. The heat pump is now set to 23 degrees."
+    assert unit.reading.set_temp == 23.0
+
+
+def test_a_refused_request_carries_no_token():
+    server = build_server(HeatpumpService(SimulatedUnit()))
+    answer = _call(server, "heatpump_set_request", setting="temperature", value="30")
+    assert answer["success"] is False
+    assert "token" not in answer
+
+
+def test_a_setting_outside_the_four_is_refused_by_the_schema():
+    server = build_server(HeatpumpService(SimulatedUnit()))
+    with pytest.raises(ToolError):
+        asyncio.run(server.call_tool("heatpump_set_request", {"setting": "timer", "value": "8"}))
+
+
+async def _no_wait(_seconds):
+    return None
