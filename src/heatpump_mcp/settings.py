@@ -27,6 +27,10 @@ if TYPE_CHECKING:
 REGIONS = ("eu", "default", "cn")
 
 
+#: How the owner enters the login again: the manager opens two masked boxes.
+ENTER_LOGIN = "Ask the claude-voice manager to open the FGLair login boxes, and enter the login there."
+
+
 class SettingsError(Exception):
     """The settings cannot be used; the message says which file to fix."""
 
@@ -50,15 +54,15 @@ def config_folder(env: Mapping[str, str]) -> pathlib.Path:
 def _secret(folder: pathlib.Path, name: str) -> str:
     path = folder / name
     if not path.is_file():
-        msg = f"Write the FGLair login to {path}, one value per file, then chmod 600 it."
+        msg = f"{path} is missing. {ENTER_LOGIN}"
         raise SettingsError(msg)
     # RULE: a login file others can read is refused
     if path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        msg = f"{path} can be read by others; run chmod 600 on it first."
+        msg = f"{path} can be read by others, so I will not use it. Run: chmod 600 {path}"
         raise SettingsError(msg)
     value = path.read_text().strip()
     if not value:
-        msg = f"{path} is empty."
+        msg = f"{path} is empty. {ENTER_LOGIN}"
         raise SettingsError(msg)
     return value
 
@@ -70,11 +74,17 @@ def load_settings(folder: pathlib.Path) -> Settings:
     try:
         table = tomllib.loads(config_path.read_text()) if config_path.is_file() else {}
     except tomllib.TOMLDecodeError:
-        msg = f"{config_path} is not valid TOML."
+        msg = (
+            f"{config_path} is not valid TOML. "
+            f"Fix it, or move it aside to use the defaults: mv {config_path} {config_path}.bad"
+        )
         raise SettingsError(msg) from None
     region = table.get("region", "eu")
     if region not in REGIONS:
-        msg = f"region in {config_path} can be {', '.join(REGIONS)}."
+        msg = (
+            f"region in {config_path} can only be {', '.join(REGIONS)}. "
+            'Write one of them, such as: region = "eu"'
+        )
         raise SettingsError(msg)
     unit = table.get("unit")
     return Settings(username, password, region, str(unit) if unit else None)

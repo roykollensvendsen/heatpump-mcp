@@ -72,7 +72,7 @@ def test_a_unit_that_does_not_answer_is_said_to_be_unknown():
     answer = _status(HeatpumpService(SilentUnit()))
     assert answer.reading is None
     assert answer.say.startswith("I could not reach the heat pump")
-    assert "try again" in answer.say
+    assert "Ask again in a minute" in answer.say
 
 
 def test_a_reason_the_unit_gives_is_read_aloud_instead():

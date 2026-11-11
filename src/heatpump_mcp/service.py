@@ -51,7 +51,10 @@ READ_BACK_SECONDS = 10.0
 #: How long between two readings while waiting for the change to show.
 POLL_SECONDS = 1.5
 
-UNREACHABLE = "I could not reach the heat pump through the cloud. Please try again soon."
+UNREACHABLE = (
+    "I could not reach the heat pump through the cloud. "
+    "Ask again in a minute, and if it keeps failing, check that the FGLair app can reach it."
+)
 
 
 @dataclass(frozen=True)
@@ -102,19 +105,19 @@ def parse(setting: Setting, value: str) -> Change | Refused:
 
 def _power(text: str) -> Change | Refused:
     if text not in {"on", "off"}:
-        return Refused("The power can be on or off.")
+        return Refused("The power can be on or off. Say which one.")
     return Change(Setting.POWER, text == "on")
 
 
 def _mode(text: str) -> Change | Refused:
     if text not in set(Mode):
-        return Refused("The mode can be heat, cool, dry, fan or auto.")
+        return Refused("The mode can be heat, cool, dry, fan or auto. Say one of those.")
     return Change(Setting.MODE, Mode(text))
 
 
 def _fan(text: str) -> Change | Refused:
     if text not in set(Fan):
-        return Refused("The fan can be quiet, low, medium, high or auto.")
+        return Refused("The fan can be quiet, low, medium, high or auto. Say one of those.")
     return Change(Setting.FAN, Fan(text))
 
 
@@ -124,14 +127,23 @@ def _temperature(text: str) -> Change | Refused:
     except ValueError:
         degrees = math.nan
     if math.isnan(degrees):
-        return Refused("The temperature can be a number of degrees, from 16 to 28.")
+        return Refused("The temperature can be a number of degrees, from 16 to 28. Say a number.")
     # RULE: a temperature outside 16 to 28 degrees is refused
     if not LOWEST <= degrees <= HIGHEST:
         return Refused(
-            f"I can only set the heat pump between 16 and 28 degrees, not {speech.degrees(degrees)}."
+            f"I can only set the heat pump between 16 and 28 degrees, not {speech.degrees(degrees)}. "
+            "Ask for a temperature in that range."
         )
     return Change(Setting.TEMPERATURE, round(degrees * 2) / 2)  # the unit takes half degrees
 
+
+#: Each setting as named in "Ask for a different ...".
+_WHAT = {
+    Setting.POWER: "setting",
+    Setting.MODE: "mode",
+    Setting.TEMPERATURE: "temperature",
+    Setting.FAN: "fan speed",
+}
 
 _PARSERS: dict[Setting, Callable[[str], Change | Refused]] = {
     Setting.POWER: _power,
@@ -230,11 +242,17 @@ class HeatpumpService:
             async with asyncio.timeout(SEND_SECONDS):
                 await self._unit.apply(pending.change)
         except ChangeNotSupportedError:
-            return Refused("This heat pump cannot do that, so nothing changed.")
-        except ChangeNotSentError:
+            what = _WHAT[pending.change.setting]
+            return Refused(f"This heat pump cannot do that, so nothing changed. Ask for a different {what}.")
+        except ChangeNotSentError as error:
             # RULE: a change that never reached the unit can be confirmed again
             self._pending = pending
-            return Refused("I could not reach the heat pump, so nothing changed. Say yes to try again.")
+            # The driver's own reason already says what to do; without one, a yes tries again.
+            return Refused(
+                f"Nothing changed: {error}"
+                if str(error)
+                else "I could not reach the heat pump, so nothing changed. Say yes to try again."
+            )
         except (UnitUnavailableError, TimeoutError):
             pass  # it may have arrived: read it back, and never send it again
         self._last_sent = self._clock()
