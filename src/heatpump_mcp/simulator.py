@@ -37,3 +37,6 @@ class SimulatedUnit:
             self.reading = dataclasses.replace(now, fan=value)
         else:
             self.reading = dataclasses.replace(now, set_temp=float(value))
+
+    async def close(self) -> None:
+        """Nothing to close: the pretend unit has no connection."""

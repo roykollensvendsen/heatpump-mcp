@@ -73,6 +73,12 @@ class FglairUnit:
         self._is_heat_pump = is_heat_pump
         self._device: Any = None
 
+    async def close(self) -> None:
+        """Close the cloud connection, if one was opened; nothing is sent."""
+        session = getattr(self._api, "websession", None)
+        if session is not None:
+            await session.close()
+
     async def _signed_in(self) -> None:
         try:
             if self._api.token_expired:
@@ -183,3 +189,6 @@ class MissingLogin:
     async def apply(self, change: Change) -> None:  # noqa: ARG002 - the Unit interface
         """Refuse, with the reason; nothing is sent."""
         raise ChangeNotSentError(self._reason)
+
+    async def close(self) -> None:
+        """Nothing to close: nothing was ever opened."""
