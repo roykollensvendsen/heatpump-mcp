@@ -15,7 +15,7 @@ from heatpump_mcp.service import (
     Refused,
 )
 from heatpump_mcp.simulator import SimulatedUnit
-from heatpump_mcp.unit import Fan, Mode, Reading, Setting, UnitUnavailableError
+from heatpump_mcp.unit import ChangeNotSentError, Fan, Mode, Reading, Setting, UnitUnavailableError
 
 START = Reading(on=True, mode=Mode.HEAT, set_temp=21.0, room_temp=20.5, outdoor_temp=3.0, fan=Fan.AUTO)
 
@@ -50,7 +50,7 @@ class FailingUnit(SimulatedUnit):
     async def apply(self, change):
         if self.failures:
             self.failures -= 1
-            raise UnitUnavailableError
+            raise ChangeNotSentError
         await super().apply(change)
 
 

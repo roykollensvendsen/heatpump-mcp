@@ -75,6 +75,10 @@ class UnitUnavailableError(Exception):
     """The unit, or the cloud in front of it, did not answer."""
 
 
+class ChangeNotSentError(UnitUnavailableError):
+    """The change certainly never reached the unit: it failed before it was sent."""
+
+
 class Unit(Protocol):
     """A heat pump that can be read and changed."""
 
@@ -83,5 +87,9 @@ class Unit(Protocol):
         ...
 
     async def apply(self, change: Change) -> None:
-        """Send one change; raises UnitUnavailableError when it did not reach the unit."""
+        """Send one change.
+
+        Raises ChangeNotSentError when it certainly did not reach the unit, and
+        UnitUnavailableError when it failed after it may have been sent.
+        """
         ...
