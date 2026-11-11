@@ -68,3 +68,39 @@ name = "a login file others can read is refused"
 file = "src/heatpump_mcp/settings.py"
 find = 'if path.stat\(\).st_mode & \(stat.S_IRWXG \| stat.S_IRWXO\):'
 replace = 'if False:'
+
+[[rule]]
+name = "a home-network address is never committed"
+file = "scripts/private_data_scan.py"
+find = 'found \+= \[f"line \{number\}: a home-network address" for _ in PRIVATE_IPV4\.findall\(line\)\]'
+replace = 'pass'
+
+[[rule]]
+name = "a value from the settings folder is never committed"
+file = "scripts/private_data_scan.py"
+find = 'found \+= \[f"line \{number\}: a value from the settings folder" for s in secrets if s in line\]'
+replace = 'pass'
+
+[[rule]]
+name = "an import a layer may not use is a breach"
+file = "scripts/ratchet.py"
+find = 'if layer\(inside\) not in ALLOWED\[mine\]:'
+replace = 'if False:'
+
+[[rule]]
+name = "a module with no layer is a breach"
+file = "scripts/ratchet.py"
+find = 'if layer\(module\) == "unassigned":'
+replace = 'if False:'
+
+[[rule]]
+name = "a measure that gets worse fails the check"
+file = "scripts/ratchet.py"
+find = 'if _worse\(metric, base\[metric\], now\[metric\]\) and metric not in allowed:'
+replace = 'if False:'
+
+[[rule]]
+name = "when the levels main kept are missing, the base is measured"
+file = "scripts/ratchet.py"
+find = '^    return measure_base\(\)$'
+replace = 'return {}'
