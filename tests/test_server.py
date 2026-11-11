@@ -82,3 +82,17 @@ def test_every_simulated_answer_says_simulated_first_refusals_included():
     for answer in answers:
         assert answer["say"].startswith("Simulated: "), answer
         assert answer["simulated"] is True
+
+
+def _tools():
+    return {t.name: t for t in asyncio.run(build_server(HeatpumpService(SimulatedUnit())).list_tools())}
+
+
+def test_the_confirm_tool_opens_by_naming_what_it_sends():
+    assert _tools()["heatpump_set_confirm"].description.splitlines()[0] == "Send the change on a yes."
+
+
+def test_the_value_input_says_which_forms_it_takes():
+    said = _tools()["heatpump_set_request"].input_schema["properties"]["value"]["description"]
+    for form in ("on", "off", "heat", "21.5", "21,5", "quiet"):
+        assert form in said

@@ -13,6 +13,7 @@ dynamic = ["version"]
 dependencies = [
     "ayla-iot-unofficial==1.5.2",
     "mcp==2.3.0",
+    "pydantic>=2",  # for the tools' input descriptions; mcp pins the version
 ]
 
 [project.scripts]

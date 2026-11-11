@@ -127,7 +127,9 @@ def _fan(text: str) -> Change | Refused:
 
 def _temperature(text: str) -> Change | Refused:
     try:
-        degrees = float(text.removesuffix("degrees").removesuffix("°c").strip())
+        # "21,5" is how a Norwegian says and writes 21.5.
+        number = text.removesuffix("degrees").removesuffix("°c").strip().replace(",", ".")
+        degrees = float(number)
     except ValueError:
         degrees = math.nan
     if math.isnan(degrees):
