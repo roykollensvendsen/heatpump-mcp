@@ -27,11 +27,78 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy src
 uv run pytest -q --cov
 committed --no-merge-commit origin/main..HEAD
+uv run python scripts/mutate.py
+uv run python scripts/ratchet.py check --base origin/main
 ```
+
+The mutation check switches every rule off in turn and wants each rule's own
+test to go red. The ratchet runs it again for its mutation figure;
+`--skip-mutation` gives a quick look that keeps main's figures. A pull
+request's check skips it too, since the `mutation` job already refuses any rule
+whose own test cannot fail.
 
 Run them after the last edit, not before it. A file edited after the format
 gate ran will fail in continuous integration, which is the cheapest possible
 way to learn that the gates are not a ritual performed once.
+
+The suite also runs `scripts/private_data_scan.py --tracked`, through
+`tests/test_private_data_scan.py`. It refuses a home-network address, a
+hardware address, and any value from the owner's settings folder (the FGLair
+login and the unit's name) in a tracked file, and names only the file and line,
+never the value. Turn on the hooks (below) and the same scan runs on every
+commit, over the staged files. Use `192.0.2.x` and `00:00:5E:00:53:xx` in
+examples.
+
+CI also scans every commit in the history for keys, tokens and passwords with
+[gitleaks](https://github.com/gitleaks/gitleaks), the `secrets` job in
+`.github/workflows/checks.yml`. A secret deleted in a later commit is still in
+every clone, so the whole history is scanned, not only the change. It needs
+Docker, so it is not one of the lines above. Run the same scan locally with:
+
+<!-- not run: needs Docker and pulls an image -->
+```
+docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.30.1 detect --source /repo --redact --no-banner
+```
+
+## The quality ratchet
+
+The gates above pass or fail. None of them notices the code slowly getting
+worse, so the ratchet compares these levels with the ones main has reached:
+
+| Measure | Better is |
+| --- | --- |
+| `coverage`: the share of the source the suite runs, in percent | higher (it may wobble by half a point between machines) |
+| `mutation`: of the rules marked in the source, how many turn their own test red when switched off | higher |
+| `tests`: how many tests pass | higher |
+| `lint_errors`, `type_errors`: what `ruff check .` and `mypy src` find | lower |
+| `cycles`: groups of modules that import each other in a circle when they load | lower |
+| `layer_violations`: imports that cross the layers below | lower, and `tests/test_layers.py` refuses any |
+| `duplication`: the share of non-blank source lines, in percent, in a block of six or more lines that appears more than once, ignoring indentation | lower |
+| `complexity`: per module, the McCabe count of its most tangled function, not counting functions defined inside it; a new module keeps every function at 15 or below | lower |
+| `test_seconds`: how long the suite takes, against `test_budget` | inside the budget plus its tolerance |
+
+The layers, lowest first: the core (`unit`, `service`, `speech`, `simulator`,
+`settings`) knows neither MCP nor the cloud library; the FGLair driver
+(`fglair`) knows the core and its cloud; the tool helper (`tools`) knows the
+core and MCP; only `server` and `cli` put them together. The map is in
+`scripts/ratchet.py`.
+
+`scripts/ratchet.py check` fails a change that makes any of them worse than
+main. Main's levels are measured by continuous integration after every merge
+and kept with that run, so a pull request never records them, and merging one
+never makes another stale ([ADR-HM-002](decisions/ADR-HM-002-main-keeps-the-quality-levels.md)).
+When main's levels for that commit are missing, the check measures the commit
+itself, which takes as long again. A change that must make a measure worse
+says so in its pull request, on a line of its own:
+
+<!-- not run: an example line in a pull request -->
+```
+Ratchet-Exception: coverage - the module it covered was deleted
+```
+
+The time budget is a limit, not a level: it is the one thing in `quality.json`,
+and it changes only by hand. `quality.toml` holds the code-health page's
+exemptions, each with a reason and the owner's approval; it has none.
 
 ## How a change is made
 
@@ -158,6 +225,9 @@ in CI afterwards. Turn it on once per clone:
 ```
 git config core.hooksPath .githooks
 ```
+
+The same setting turns on a `pre-commit` hook, which runs the private-data scan
+over the files being committed.
 
 It is a convenience and not the gate: `--no-verify` skips it, and CI is what
 actually blocks.

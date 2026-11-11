@@ -1,0 +1,16 @@
+# Code-health exemptions: a measure on the claude-voice code-health page that is
+# allowed to stay outside its limit, shown there as exempt (never as green).
+#
+# One entry per measure, each with a written reason (why meeting the limit would
+# make the code worse, not that it would take long) and the owner's approval,
+# added in a pull request of its own. An entry missing either is ignored, and a
+# measure back inside its limit is green again whatever this file says, so the
+# entry is deleted then. The measure ids are coverage, mutation, tests,
+# problems, cycles, layers, duplication, complexity and test_time.
+#
+#     [[exempt]]
+#     measure = "complexity"
+#     reason = "the tool table is one long match on the tool's name"
+#     approved = "Roy, 2026-11-11, in pull request #42"
+#
+# There are no exemptions.

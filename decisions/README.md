@@ -30,6 +30,7 @@ decision nobody writes down.
 | Id | Decides | Status |
 |---|---|---|
 | [ADR-HM-001](ADR-HM-001-reach-the-unit-through-fglair-with-ayla-iot-unofficial.md) | Reach the unit through the FGLair cloud with ayla-iot-unofficial, as Home Assistant does | Accepted |
+| [ADR-HM-002](ADR-HM-002-main-keeps-the-quality-levels.md) | Main keeps the quality levels with its own runs, so a pull request never records them | Accepted |
 
 What is deliberately left undone, and what would make each worth doing, is
 [`deferred.md`](deferred.md). A thing left undone with no trigger is a thing
