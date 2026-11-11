@@ -56,3 +56,9 @@ name = "a change the unit does not show is said to be not confirmed"
 file = "src/heatpump_mcp/service.py"
 find = 'if reading is not None and change.shown_by\(reading\):'
 replace = 'if reading is not None:'
+
+[[rule]]
+name = "reading back never starts a read that would end after the window"
+file = "src/heatpump_mcp/service.py"
+find = 'while self._clock\(\) \+ POLL_SECONDS \+ READ_SECONDS <= due:'
+replace = 'while self._clock() < due:'

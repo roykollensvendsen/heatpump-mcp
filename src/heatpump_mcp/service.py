@@ -18,7 +18,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from heatpump_mcp import speech
-from heatpump_mcp.unit import Change, Fan, Mode, Reading, Setting, Unit, UnitUnavailableError
+from heatpump_mcp.unit import (
+    Change,
+    ChangeNotSentError,
+    Fan,
+    Mode,
+    Reading,
+    Setting,
+    Unit,
+    UnitUnavailableError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -31,11 +40,15 @@ LOWEST, HIGHEST = 16.0, 28.0
 CHANGE_GAP_SECONDS = 10.0
 #: How long a question stays answerable.
 TOKEN_SECONDS = 30.0
-#: How long a confirm waits for the unit to show the change before it answers.
-#: Inside the Claude app's 15 seconds for a tool (the plugin standard, rule 3).
-READ_BACK_SECONDS = 8.0
+#: The longest one reading of the unit may take, signing in to the cloud included.
+READ_SECONDS = 6.0
+#: The longest sending one change may take.
+SEND_SECONDS = 3.0
+#: How long a confirm reads the unit back for, after sending. With SEND_SECONDS
+#: it stays inside the Claude app's 15 seconds for a tool (the plugin standard, rule 3).
+READ_BACK_SECONDS = 10.0
 #: How long between two readings while waiting for the change to show.
-POLL_SECONDS = 2.0
+POLL_SECONDS = 1.5
 
 UNREACHABLE = "I could not reach the heat pump through the cloud. Please try again soon."
 
@@ -163,8 +176,9 @@ class HeatpumpService:
 
     async def _fresh(self) -> Reading | None:
         try:
-            reading = await self._unit.read()
-        except UnitUnavailableError:
+            async with asyncio.timeout(READ_SECONDS):
+                reading = await self._unit.read()
+        except (UnitUnavailableError, TimeoutError):
             return None
         self._cached = (self._clock(), reading)
         return reading
@@ -202,11 +216,14 @@ class HeatpumpService:
                 f"I change the heat pump only once every 10 seconds. Say yes again in {wait} seconds."
             )
         try:
-            await self._unit.apply(pending.change)
-        except UnitUnavailableError:
+            async with asyncio.timeout(SEND_SECONDS):
+                await self._unit.apply(pending.change)
+        except ChangeNotSentError:
             # RULE: a change that never reached the unit can be confirmed again
             self._pending = pending
             return Refused("I could not reach the heat pump, so nothing changed. Say yes to try again.")
+        except (UnitUnavailableError, TimeoutError):
+            pass  # it may have arrived: read it back, and never send it again
         self._last_sent = self._clock()
         return await self._read_back(pending.change)
 
@@ -215,7 +232,8 @@ class HeatpumpService:
         self._cached = None
         due = self._clock() + READ_BACK_SECONDS
         reading: Reading | None = None
-        while self._clock() < due:
+        # RULE: reading back never starts a read that would end after the window
+        while self._clock() + POLL_SECONDS + READ_SECONDS <= due:
             await self._sleep(POLL_SECONDS)
             reading = await self._fresh()
             # RULE: a change the unit does not show is said to be not confirmed
