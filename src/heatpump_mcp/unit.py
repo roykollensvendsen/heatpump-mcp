@@ -90,6 +90,10 @@ class Unit(Protocol):
         """The unit's settings and temperatures now; raises UnitUnavailableError."""
         ...
 
+    async def ready(self) -> None:
+        """Sign in and find the unit, sending nothing; raises ChangeNotSentError."""
+        ...
+
     async def apply(self, change: Change) -> None:
         """Send one change.
 

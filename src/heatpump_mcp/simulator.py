@@ -38,5 +38,8 @@ class SimulatedUnit:
         else:
             self.reading = dataclasses.replace(now, set_temp=float(value))
 
+    async def ready(self) -> None:
+        """Nothing to sign in to: the pretend unit is always ready."""
+
     async def close(self) -> None:
         """Nothing to close: the pretend unit has no connection."""
