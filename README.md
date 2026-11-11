@@ -29,9 +29,26 @@ $ uv run heatpump-mcp serve --simulate < /dev/null
 | Tool | What it does |
 | --- | --- |
 | `heatpump_status` | Reads the unit, changing nothing. A reading is reused for 30 seconds. |
+| `heatpump_set_request` | Checks one change (power, mode, temperature or fan) and returns a question to read aloud, with a token. Changes nothing. |
+| `heatpump_set_confirm` | Sends that change, with the token, after the owner's spoken yes, then reads the unit back. |
 
 Every answer has `say`, a sentence to read aloud as it is, and `success`,
-which a program can read.
+which a program can read. After a change, `success` is true only when the
+unit, read back, shows it; otherwise `say` tells the owner it is not
+confirmed.
+
+## The safety rules
+
+- Nothing changes without a question and a spoken yes. A token works for
+  the most recent question only, once, for 30 seconds; a wrong one cancels
+  the question.
+- Temperatures from 16 to 28 °C only; anything else is refused.
+- At most one change every 10 seconds.
+- Only power, mode, temperature and fan. Nothing in the code touches the
+  unit's firmware, Wi-Fi, schedules, timers or the cloud account, and a test
+  refuses any code that so much as names them.
+- A change that never reached the unit can be confirmed again with the same
+  token while it is fresh; nothing is retried on the plugin's own initiative.
 
 ## The gates
 
