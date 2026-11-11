@@ -66,3 +66,19 @@ def test_a_setting_outside_the_four_is_refused_by_the_schema():
 
 async def _no_wait(_seconds):
     return None
+
+
+def test_every_simulated_answer_says_simulated_first_refusals_included():
+    unit = SimulatedUnit()
+    server = build_server(HeatpumpService(unit, sleep=_no_wait), simulated=True)
+    question = _call(server, "heatpump_set_request", setting="fan", value="low")
+    answers = [
+        _call(server, "heatpump_status"),
+        question,
+        _call(server, "heatpump_set_confirm", token=question["token"]),
+        _call(server, "heatpump_set_request", setting="temperature", value="35"),
+        _call(server, "heatpump_set_confirm", token="no-such-question"),  # noqa: S106 - not a secret
+    ]
+    for answer in answers:
+        assert answer["say"].startswith("Simulated: "), answer
+        assert answer["simulated"] is True
