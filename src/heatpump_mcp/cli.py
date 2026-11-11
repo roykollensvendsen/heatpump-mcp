@@ -10,7 +10,7 @@ import pathlib
 import sys
 
 from heatpump_mcp.server import build_server
-from heatpump_mcp.service import HeatpumpService
+from heatpump_mcp.service import HeatpumpService, Status
 from heatpump_mcp.settings import SettingsError, config_folder, load_settings
 from heatpump_mcp.simulator import SimulatedUnit
 
@@ -32,6 +32,13 @@ def _service(*, simulate: bool, folder: pathlib.Path) -> HeatpumpService:
         return HeatpumpService(MissingLogin(f"The heat pump's login is not set up: {error}"))
 
 
+async def _status_once(service: HeatpumpService) -> Status:
+    try:
+        return await service.status()
+    finally:
+        await service.close()  # an open cloud connection would be reported on exit
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch. Returns a process exit code."""
     parser = argparse.ArgumentParser(prog="heatpump-mcp", description=__doc__)
@@ -43,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     service = _service(simulate=args.simulate, folder=args.config_dir or config_folder(os.environ))
     if args.command == "status":
-        status = asyncio.run(service.status())
+        status = asyncio.run(_status_once(service))
         prefix = "Simulated: " if args.simulate else ""
         sys.stdout.write(f"{prefix}{status.say}\n")
         return 0 if status.reading is not None else 1

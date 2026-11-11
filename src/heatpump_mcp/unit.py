@@ -97,3 +97,7 @@ class Unit(Protocol):
         UnitUnavailableError when it failed after it may have been sent.
         """
         ...
+
+    async def close(self) -> None:
+        """Let go of any connection; sends nothing to the unit."""
+        ...

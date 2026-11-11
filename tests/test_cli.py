@@ -14,3 +14,15 @@ def test_without_a_login_the_status_says_which_file_to_write(capsys, tmp_path):
     said = capsys.readouterr().out
     assert said.startswith("The heat pump's login is not set up:")
     assert "fglair-username" in said
+
+
+def test_the_status_command_closes_the_unit_after_reading_it(monkeypatch):
+    closed = []
+
+    class Closing(cli.SimulatedUnit):
+        async def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(cli, "SimulatedUnit", Closing)
+    assert cli.main(["status", "--simulate"]) == 0
+    assert closed == [True]

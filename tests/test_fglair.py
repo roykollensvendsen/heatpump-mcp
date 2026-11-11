@@ -193,3 +193,25 @@ def test_until_the_login_is_set_up_nothing_is_sent_and_the_reason_is_given():
         asyncio.run(missing.read())
     with pytest.raises(ChangeNotSentError):
         asyncio.run(missing.apply(Change(Setting.FAN, Fan.LOW)))
+
+
+class FakeSession:
+    def __init__(self):
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
+
+
+def test_closing_the_unit_closes_the_cloud_connection():
+    api = FakeApi()
+    api.websession = FakeSession()
+    asyncio.run(_unit(api).close())
+    assert api.websession.closed
+
+
+def test_closing_a_unit_never_read_sends_nothing():
+    api = FakeApi()
+    api.websession = None
+    asyncio.run(_unit(api).close())
+    assert api.sign_ins == 0

@@ -169,6 +169,10 @@ class HeatpumpService:
             return Status(None, self._why)
         return Status(reading, speech.describe(reading))
 
+    async def close(self) -> None:
+        """Let go of the unit's connection, when the service is done."""
+        await self._unit.close()
+
     async def _reading(self) -> Reading | None:
         now = self._clock()
         # RULE: a status is kept for thirty seconds
