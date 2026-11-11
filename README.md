@@ -46,11 +46,12 @@ name in the FGLair app, which is needed only when the account has more than
 one. A file anyone else can read is refused.
 
 Until the login is there, the server still starts, and every answer says
-what to set up:
+what to set up. Every refusal and failure says what is wrong and what to do
+next, with the exact command where there is one:
 
 ```console
 $ uv run heatpump-mcp status --config-dir /nonexistent
-The heat pump's login is not set up: Write the FGLair login to /nonexistent/fglair-username, one value per file, then chmod 600 it.
+The heat pump's login is not set up: /nonexistent/fglair-username is missing. Ask the claude-voice manager to open the FGLair login boxes, and enter the login there.
 ```
 
 With the login in place, `uv run heatpump-mcp serve` serves the real unit,

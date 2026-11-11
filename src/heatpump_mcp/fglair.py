@@ -17,6 +17,7 @@ from ayla_iot_unofficial import AylaAuthError, AylaError, new_ayla_api
 from ayla_iot_unofficial.fujitsu_consts import FGLAIR_APP_CREDENTIALS, FanSpeed, OpMode
 from ayla_iot_unofficial.fujitsu_hvac import DeviceOffline, FujitsuHVAC, SettingNotSupportedError
 
+from heatpump_mcp.settings import ENTER_LOGIN
 from heatpump_mcp.unit import (
     Change,
     ChangeNotSentError,
@@ -50,7 +51,7 @@ _MODES = {
 _OP_MODES = {mode: op for op, mode in _MODES.items()}
 _FANS = {FanSpeed[fan.name]: fan for fan in Fan}
 
-LOGIN_REFUSED = "The FGLair cloud refused the login; the owner needs to enter it again."
+LOGIN_REFUSED = f"The FGLair cloud refused the login. {ENTER_LOGIN}"
 
 
 def _is_heat_pump(device: object) -> bool:
@@ -96,16 +97,24 @@ class FglairUnit:
             units = [d for d in units if str(d.device_name).casefold() == wanted]
         if not units:
             msg = (
-                "Fujitsu's cloud lists no heat pump by that name."
+                "Fujitsu's cloud lists no heat pump with the name in config.toml. "
+                'Write it as the FGLair app shows it, such as: unit = "Living room"'
                 if self._unit_name
-                else "No heat pump found."
+                else "Fujitsu's cloud lists no heat pump for this login. "
+                "Check that the FGLair app shows the heat pump when signed in with the same login."
             )
             raise UnitUnavailableError(msg)
         if len(units) > 1:
-            msg = "Fujitsu's cloud lists more than one heat pump; name one in the settings."
+            msg = (
+                "Fujitsu's cloud lists more than one heat pump. Write the one to use in config.toml, "
+                'as the FGLair app names it, such as: unit = "Living room"'
+            )
             raise UnitUnavailableError(msg)
         if not units[0].is_online():
-            msg = "The heat pump is offline in the FGLair cloud."
+            msg = (
+                "The heat pump is offline in the FGLair cloud. "
+                "Check that it has power and that the FGLair app shows it online."
+            )
             raise UnitUnavailableError(msg)
         return units[0]
 
