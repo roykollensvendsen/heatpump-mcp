@@ -43,6 +43,8 @@ class Settings:
     password: str = field(repr=False)
     region: str = "eu"
     unit_name: str | None = None
+    #: Where the optional settings are, so a message can name the file to edit.
+    config_file: str = "config.toml"
 
 
 def config_folder(env: Mapping[str, str]) -> pathlib.Path:
@@ -87,4 +89,4 @@ def load_settings(folder: pathlib.Path) -> Settings:
         )
         raise SettingsError(msg)
     unit = table.get("unit")
-    return Settings(username, password, region, str(unit) if unit else None)
+    return Settings(username, password, region, str(unit) if unit else None, str(config_path))

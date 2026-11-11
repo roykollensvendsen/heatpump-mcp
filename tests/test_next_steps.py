@@ -215,3 +215,32 @@ def test_a_login_others_can_read_gives_the_exact_command(tmp_path):
 def test_a_change_that_never_left_says_why_when_the_cloud_gave_a_reason():
     say = _confirmed(Unsent("The FGLair cloud refused the login. Ask the claude-voice manager."))
     assert say.startswith("Nothing changed: The FGLair cloud refused the login.")
+
+
+def test_a_wrong_or_missing_unit_name_names_the_settings_file_and_the_unit_setting(tmp_path):
+    from heatpump_mcp.fglair import FglairUnit  # noqa: PLC0415
+
+    def is_fake(device):
+        return isinstance(device, FakeDevice)
+
+    config = str(tmp_path / "config.toml")
+    for api, name in (
+        (FakeApi(FakeDevice("Hall")), "Attic"),
+        (FakeApi(FakeDevice("A"), FakeDevice("B")), None),
+    ):
+        unit = FglairUnit(api, unit_name=name, is_heat_pump=is_fake, config_file=config)
+        with pytest.raises(UnitUnavailableError) as caught:
+            _run(unit.read())
+        assert config in str(caught.value)
+        assert "unit = " in str(caught.value)
+
+
+def test_an_offline_heat_pump_asks_for_its_power_and_network_to_be_checked():
+    say = _cloud_read(FakeApi(FakeDevice(online=False)))
+    assert "power" in say
+    assert "network" in say
+
+
+def test_the_settings_file_named_is_the_one_beside_the_login(tmp_path):
+    _login(tmp_path)
+    assert load_settings(tmp_path).config_file == str(tmp_path / "config.toml")
