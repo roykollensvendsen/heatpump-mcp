@@ -62,3 +62,9 @@ name = "reading back never starts a read that would end after the window"
 file = "src/heatpump_mcp/service.py"
 find = 'while self._clock\(\) \+ POLL_SECONDS \+ READ_SECONDS <= due:'
 replace = 'while self._clock() < due:'
+
+[[rule]]
+name = "a login file others can read is refused"
+file = "src/heatpump_mcp/settings.py"
+find = 'if path.stat\(\).st_mode & \(stat.S_IRWXG \| stat.S_IRWXO\):'
+replace = 'if False:'

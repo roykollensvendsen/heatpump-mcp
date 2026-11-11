@@ -21,6 +21,7 @@ from heatpump_mcp import speech
 from heatpump_mcp.unit import (
     Change,
     ChangeNotSentError,
+    ChangeNotSupportedError,
     Fan,
     Mode,
     Reading,
@@ -159,12 +160,13 @@ class HeatpumpService:
         self._cached: tuple[float, Reading] | None = None
         self._pending: _Pending | None = None
         self._last_sent: float | None = None
+        self._why = UNREACHABLE  # why the last reading failed, in words safe to read aloud
 
     async def status(self) -> Status:
         """The unit's state, from a reading at most STATUS_CACHE_SECONDS old."""
         reading = await self._reading()
         if reading is None:
-            return Status(None, UNREACHABLE)
+            return Status(None, self._why)
         return Status(reading, speech.describe(reading))
 
     async def _reading(self) -> Reading | None:
@@ -178,7 +180,12 @@ class HeatpumpService:
         try:
             async with asyncio.timeout(READ_SECONDS):
                 reading = await self._unit.read()
-        except (UnitUnavailableError, TimeoutError):
+        except UnitUnavailableError as error:
+            # The unit's own reasons are written for the voice and hold no login or address.
+            self._why = str(error) or UNREACHABLE
+            return None
+        except TimeoutError:
+            self._why = UNREACHABLE
             return None
         self._cached = (self._clock(), reading)
         return reading
@@ -191,7 +198,7 @@ class HeatpumpService:
             return change
         reading = await self._reading()
         if reading is None:
-            return Refused(UNREACHABLE)
+            return Refused(self._why)
         if change.shown_by(reading):
             return Refused(speech.already(change, reading))
         token = self._new_token()
@@ -218,6 +225,8 @@ class HeatpumpService:
         try:
             async with asyncio.timeout(SEND_SECONDS):
                 await self._unit.apply(pending.change)
+        except ChangeNotSupportedError:
+            return Refused("This heat pump cannot do that, so nothing changed.")
         except ChangeNotSentError:
             # RULE: a change that never reached the unit can be confirmed again
             self._pending = pending

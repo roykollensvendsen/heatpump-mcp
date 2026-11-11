@@ -29,6 +29,7 @@ decision nobody writes down.
 
 | Id | Decides | Status |
 |---|---|---|
+| [ADR-HM-001](ADR-HM-001-reach-the-unit-through-fglair-with-ayla-iot-unofficial.md) | Reach the unit through the FGLair cloud with ayla-iot-unofficial, as Home Assistant does | Accepted |
 
 What is deliberately left undone, and what would make each worth doing, is
 [`deferred.md`](deferred.md). A thing left undone with no trigger is a thing

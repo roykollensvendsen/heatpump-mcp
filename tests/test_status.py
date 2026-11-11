@@ -73,3 +73,13 @@ def test_a_unit_that_does_not_answer_is_said_to_be_unknown():
     assert answer.reading is None
     assert answer.say.startswith("I could not reach the heat pump")
     assert "try again" in answer.say
+
+
+def test_a_reason_the_unit_gives_is_read_aloud_instead():
+    class Refusing(SimulatedUnit):
+        async def read(self):
+            msg = "The FGLair cloud refused the login; the owner needs to enter it again."
+            raise UnitUnavailableError(msg)
+
+    answer = _status(HeatpumpService(Refusing()))
+    assert answer.say == "The FGLair cloud refused the login; the owner needs to enter it again."

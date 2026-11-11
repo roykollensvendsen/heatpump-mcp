@@ -12,3 +12,6 @@ read whenever a decision record is written and when a phase ends.
 | A release workflow and publishing | The first release someone outside will install | A published name is claimed and a published version cannot be reused |
 | `CODEOWNERS` | A second person who reviews | It would name one person as the owner of everything |
 | `pre-commit` as a requirement rather than an option | A second contributor | The gates run in CI, and a hook one person installs is a hook one person maintains |
+| Ayla LAN mode: control without the cloud (ADR-HM-001) | The cloud proves unreliable for status or for changes | It needs the cloud once, a fixed address and a connection back from the unit, and the unit does not confirm a change |
+| Swing of the air flaps | The owner asks for it | Not in the design the owner approved |
+| A log of each change sent | The owner asks what was changed and when | The voice reads every result aloud as it happens |

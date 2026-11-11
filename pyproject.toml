@@ -11,6 +11,7 @@ license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 dynamic = ["version"]
 dependencies = [
+    "ayla-iot-unofficial==1.5.2",
     "mcp==2.3.0",
 ]
 
@@ -56,6 +57,11 @@ ignore = ["D203", "D213", "COM812", "ISC001", "CPY001", "D401"]
 python_version = "3.12"
 strict = true
 warn_unused_configs = true
+
+# ayla-iot-unofficial ships no type information; only fglair.py imports it.
+[[tool.mypy.overrides]]
+module = ["ayla_iot_unofficial", "ayla_iot_unofficial.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
