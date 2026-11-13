@@ -142,3 +142,13 @@ def test_the_wait_file_is_readable_by_the_owner_alone(tmp_path, login):
     _, _, wait = _refused_then_restarted(tmp_path, login, Clock())
     assert stat.S_IMODE(wait.stat().st_mode) == 0o600
     assert [p.name for p in wait.parent.iterdir()] == ["login-wait"]
+
+
+def test_a_wait_written_while_the_clock_was_ahead_is_no_wait(tmp_path, login):
+    """The file's change time is later than now, so the clock was wrong when it was written."""
+    wait = tmp_path / "login-wait"
+    wait.write_text(f"{time.time() + LOGIN_BACKOFF_SECONDS}\n")
+    _age(wait, -3600)
+    api = Refusing()
+    _refused(_unit(api, time.time, LoginWait(wait, login_files=[login])).read)
+    assert api.tries == 1

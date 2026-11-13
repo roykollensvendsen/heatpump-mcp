@@ -165,3 +165,9 @@ name = "a kept wait ends at most the longest wait after it began"
 file = "src/heatpump_mcp/fglair.py"
 find = 'return min\(end, began / 1e9 \+ LOGIN_BACKOFF_LONGEST\)'
 replace = 'return end'
+
+[[rule]]
+name = "a wait written while the clock was ahead is no wait"
+file = "src/heatpump_mcp/fglair.py"
+find = 'if began / 1e9 > self\._clock\(\):'
+replace = 'if False:'

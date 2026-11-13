@@ -104,10 +104,17 @@ class LoginWait:
     kept only while the plugin runs, as before.
     """
 
-    def __init__(self, path: pathlib.Path, *, login_files: Iterable[pathlib.Path] = ()) -> None:
+    def __init__(
+        self,
+        path: pathlib.Path,
+        *,
+        login_files: Iterable[pathlib.Path] = (),
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         """Keep the wait in `path`; a change to any of `login_files` after it began ends it."""
         self._path = path
         self._login_files = tuple(login_files)
+        self._clock = clock
 
     def end(self) -> float | None:
         """When the kept wait ends, or None if there is none to keep to."""
@@ -115,6 +122,9 @@ class LoginWait:
             began = self._path.stat().st_mtime_ns
             end = float(self._path.read_text())
         except (OSError, ValueError):
+            return None
+        # RULE: a wait written while the clock was ahead is no wait
+        if began / 1e9 > self._clock():
             return None
         # RULE: a login entered after the wait began ends the wait
         if any(_changed_at(f) > began for f in self._login_files):
