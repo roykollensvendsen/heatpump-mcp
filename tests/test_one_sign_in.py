@@ -62,3 +62,20 @@ def test_a_change_and_a_status_at_once_sign_in_once(first):
 
     asyncio.run(both())
     assert api.tries == 1
+
+
+def test_a_question_given_up_while_signing_in_lets_the_next_one_sign_in():
+    api = SlowToSignIn()
+    unit = _unit(api)
+
+    async def given_up_then_asked_again():
+        first = asyncio.create_task(unit.read())
+        await asyncio.sleep(0.005)  # inside the sign-in, which takes 0.01
+        assert api.tries == 1
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        await asyncio.wait_for(unit.read(), timeout=1)
+
+    asyncio.run(given_up_then_asked_again())
+    assert api.tries == 2

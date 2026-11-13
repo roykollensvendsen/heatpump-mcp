@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import os
 import pathlib
 import sys
 
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService, Status
-from heatpump_mcp.settings import config_folder
+from heatpump_mcp.settings import config_folder, state_folder
 from heatpump_mcp.simulator import SimulatedUnit
 
 #: Every verb this command has. The documentation test requires each one to
@@ -23,10 +24,14 @@ def _service(*, simulate: bool, folder: pathlib.Path) -> HeatpumpService:
     if simulate:
         return HeatpumpService(SimulatedUnit())
     # The library is imported only for the real unit, so --simulate never loads it.
-    from heatpump_mcp.fglair import LoginFolder  # noqa: PLC0415
+    from heatpump_mcp.fglair import LoginFolder, LoginWait, connect  # noqa: PLC0415
 
+    wait = LoginWait(
+        state_folder(os.environ) / "login-wait",
+        login_files=(folder / "fglair-username", folder / "fglair-password"),
+    )
     # The login is read at each call, so the server starts without one and says what to set up.
-    return HeatpumpService(LoginFolder(folder))
+    return HeatpumpService(LoginFolder(folder, build=functools.partial(connect, wait=wait)))
 
 
 async def _status_once(service: HeatpumpService) -> Status:
