@@ -141,3 +141,9 @@ file = "src/heatpump_mcp/fglair.py"
 find = 'await self._api.async_sign_in\(\)$'
 occurrence = 2
 replace = "raise"
+
+[[rule]]
+name = "one sign-in at a time"
+file = "src/heatpump_mcp/fglair.py"
+find = 'async with self\._signing_in:'
+replace = 'if True:'
