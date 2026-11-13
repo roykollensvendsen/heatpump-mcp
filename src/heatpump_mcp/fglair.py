@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
+import os
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -118,13 +119,23 @@ class LoginWait:
         # RULE: a login entered after the wait began ends the wait
         if any(_changed_at(f) > began for f in self._login_files):
             return None
-        return end
+        # RULE: a kept wait ends at most the longest wait after it began
+        return min(end, began / 1e9 + LOGIN_BACKOFF_LONGEST)
 
     def begin(self, end: float) -> None:
-        """Keep `end` as the time the wait ends."""
+        """Keep `end` as the time the wait ends, readable by the owner alone.
+
+        It is written beside the file and renamed over it, so a crash mid-write
+        leaves the old wait or the new one, never half of one.
+        """
+        written = self._path.with_name(self._path.name + ".new")
         with contextlib.suppress(OSError):
             self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            self._path.write_text(f"{end}\n")
+            fd = os.open(written, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as file:
+                os.fchmod(file.fileno(), 0o600)
+                file.write(f"{end}\n")
+            written.replace(self._path)
 
     def clear(self) -> None:
         """Keep no wait."""

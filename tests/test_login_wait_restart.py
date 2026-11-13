@@ -10,6 +10,9 @@ wait began is a new login and is tried at once. No network is touched.
 
 import asyncio
 import os
+import stat
+import time
+from datetime import UTC, datetime
 
 import pytest
 from test_fglair import FakeDevice
@@ -122,3 +125,20 @@ def test_a_wait_file_that_cannot_be_written_still_leaves_the_wait_in_memory(tmp_
 def test_the_wait_file_is_in_the_state_folder():
     assert state_folder({"HOME": "/home/someone"}).as_posix() == "/home/someone/.local/state/heatpump-mcp"
     assert state_folder({"XDG_STATE_HOME": "/elsewhere"}).as_posix() == "/elsewhere/heatpump-mcp"
+
+
+def test_a_kept_wait_ends_at_most_the_longest_wait_after_it_began(tmp_path, login):
+    """A file that says the year 2100, written two hours ago, is no wait."""
+    wait = tmp_path / "login-wait"
+    wait.write_text(f"{datetime(2100, 1, 1, tzinfo=UTC).timestamp()}\n")
+    _age(wait, 2 * 3600)
+    _age(login, 3 * 3600)
+    api = Refusing()
+    _refused(_unit(api, time.time, LoginWait(wait, login_files=[login])).read)
+    assert api.tries == 1
+
+
+def test_the_wait_file_is_readable_by_the_owner_alone(tmp_path, login):
+    _, _, wait = _refused_then_restarted(tmp_path, login, Clock())
+    assert stat.S_IMODE(wait.stat().st_mode) == 0o600
+    assert [p.name for p in wait.parent.iterdir()] == ["login-wait"]
