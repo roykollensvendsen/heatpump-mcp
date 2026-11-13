@@ -130,13 +130,25 @@ class FglairUnit:
             if self._api.token_expired:
                 await self._api.async_sign_in()
             elif _renew_due(self._api):
-                await self._api.async_refresh_auth()
+                await self._renewed()
         except AylaAuthError:
             wait = min(LOGIN_BACKOFF_SECONDS * 2**self._refusals, LOGIN_BACKOFF_LONGEST)
             self._refusals += 1
             self._retry_at = now + wait
             raise UnitUnavailableError(_login_refused(wait)) from None
         self._refusals, self._retry_at = 0, None
+
+    async def _renewed(self) -> None:
+        """Renew the token, or sign in once if the cloud will not renew it.
+
+        A refused sign-in raises out of here, so the wait after a refused login
+        applies to it as to any other.
+        """
+        try:
+            await self._api.async_refresh_auth()
+        except AylaAuthError:
+            # RULE: a refused renewal is followed by one full sign-in
+            await self._api.async_sign_in()
 
     async def _find(self) -> Any:  # noqa: ANN401 - a library FujitsuHVAC
         await self._signed_in()
