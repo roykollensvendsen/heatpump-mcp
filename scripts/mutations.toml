@@ -134,3 +134,10 @@ name = "a refused login is not tried again until its wait is over"
 file = "src/heatpump_mcp/fglair.py"
 find = 'if self\._retry_at is not None and now < self\._retry_at:'
 replace = 'if False:'
+
+[[rule]]
+name = "a refused renewal is followed by one full sign-in"
+file = "src/heatpump_mcp/fglair.py"
+find = 'await self._api.async_sign_in\(\)$'
+occurrence = 2
+replace = "raise"
