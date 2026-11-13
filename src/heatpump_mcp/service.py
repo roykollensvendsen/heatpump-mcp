@@ -46,8 +46,8 @@ READ_SECONDS = 6.0
 #: The longest sending one change may take.
 SEND_SECONDS = 3.0
 #: The longest signing in and finding the unit may take, before the send starts.
-#: A token that still works is not renewed for a change, so this is instant unless
-#: the token has run out or the login was just entered again.
+#: The question renews the cloud token ahead (fglair.RENEW_AHEAD_SECONDS), so this is
+#: instant unless the token ran short some other way or the login was entered again.
 READY_SECONDS = 2.0
 #: How long a confirm reads the unit back for, after sending. With READY_SECONDS and
 #: SEND_SECONDS it stays inside the Claude app's 15 seconds for a tool (the plugin

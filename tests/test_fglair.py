@@ -2,6 +2,7 @@
 """The FGLair driver, against a fake of the library's objects; no network is touched."""
 
 import asyncio
+from datetime import datetime, timedelta
 
 import aiohttp
 import pytest
@@ -64,6 +65,13 @@ class FakeApi:
         self.token_expiring_soon = True
         self.sign_ins = 0
         self.refreshes = 0
+
+    @property
+    def auth_expiration(self):
+        """When the token runs out, as the library keeps it, from the two flags tests set."""
+        if self.token_expired:
+            return None
+        return datetime.now() + timedelta(seconds=300 if self.token_expiring_soon else 86400)  # noqa: DTZ005 - naive, as the library
 
     async def async_sign_in(self):
         if self.refuse_login:
