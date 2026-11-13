@@ -159,3 +159,9 @@ name = "a login entered after the wait began ends the wait"
 file = "src/heatpump_mcp/fglair.py"
 find = 'if any\(_changed_at\(f\) > began for f in self\._login_files\):'
 replace = 'if False:'
+
+[[rule]]
+name = "a kept wait ends at most the longest wait after it began"
+file = "src/heatpump_mcp/fglair.py"
+find = 'return min\(end, began / 1e9 \+ LOGIN_BACKOFF_LONGEST\)'
+replace = 'return end'
