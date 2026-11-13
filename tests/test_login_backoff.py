@@ -66,6 +66,14 @@ def test_while_waiting_the_reason_and_the_wait_are_said():
     assert "claude-voice manager" in say
 
 
+def test_the_last_minute_of_the_wait_is_said_as_one_minute():
+    api, clock = Refusing(), Clock()
+    unit = _unit(api, clock)
+    _refused(unit.read)
+    clock.now += LOGIN_BACKOFF_SECONDS - 30
+    assert "wait 1 minute before" in _refused(unit.read)
+
+
 def test_after_the_wait_the_login_is_tried_once_more():
     api, clock = Refusing(), Clock()
     unit = _unit(api, clock)

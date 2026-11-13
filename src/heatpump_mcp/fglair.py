@@ -63,8 +63,9 @@ LOGIN_BACKOFF_LONGEST = 3600
 def _login_refused(wait: float) -> str:
     minutes = math.ceil(wait / 60)
     return (
-        "The FGLair cloud refused the login, so I will not try it again "
-        f"for {minutes} minutes, so the FGLair login does not get locked. {ENTER_LOGIN}"
+        f"The FGLair cloud refused the login. I will wait {minutes} "
+        f"minute{'' if minutes == 1 else 's'} before trying again, "
+        f"so the FGLair login is not locked. {ENTER_LOGIN}"
     )
 
 
