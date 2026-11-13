@@ -116,3 +116,9 @@ name = "a sign-in that times out is never reported as sent"
 file = "src/heatpump_mcp/service.py"
 find = 'except \(UnitUnavailableError, TimeoutError\) as error:'
 replace = 'except UnitUnavailableError as error:'
+
+[[rule]]
+name = "a refused login is not tried again until its wait is over"
+file = "src/heatpump_mcp/fglair.py"
+find = 'if self\._retry_at is not None and now < self\._retry_at:'
+replace = 'if False:'

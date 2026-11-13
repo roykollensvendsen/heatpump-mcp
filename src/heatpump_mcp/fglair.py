@@ -10,6 +10,8 @@ words, so neither the login nor the unit's identity can reach the voice.
 
 from __future__ import annotations
 
+import math
+import time
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -52,7 +54,18 @@ _MODES = {
 _OP_MODES = {mode: op for op, mode in _MODES.items()}
 _FANS = {FanSpeed[fan.name]: fan for fan in Fan}
 
-LOGIN_REFUSED = f"The FGLair cloud refused the login. {ENTER_LOGIN}"
+#: Seconds to wait before a refused login is tried again; each refusal in a row
+#: doubles it, up to the longest, so a wrong password cannot get the account locked.
+LOGIN_BACKOFF_SECONDS = 300
+LOGIN_BACKOFF_LONGEST = 3600
+
+
+def _login_refused(wait: float) -> str:
+    minutes = math.ceil(wait / 60)
+    return (
+        "The FGLair cloud refused the login, so I will not try it again "
+        f"for {minutes} minutes, so the FGLair login does not get locked. {ENTER_LOGIN}"
+    )
 
 
 def _is_heat_pump(device: object) -> bool:
@@ -69,6 +82,7 @@ class FglairUnit:
         unit_name: str | None = None,
         is_heat_pump: Callable[[object], bool] = _is_heat_pump,
         config_file: str = "config.toml",
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Use `api`, signed in or not; `unit_name` picks the unit when the account has several."""
         self._api = api
@@ -76,6 +90,9 @@ class FglairUnit:
         self._is_heat_pump = is_heat_pump
         self._config_file = config_file
         self._device: Any = None
+        self._clock = clock
+        self._refusals = 0
+        self._retry_at: float | None = None
 
     async def close(self) -> None:
         """Close the cloud connection, if one was opened; nothing is sent."""
@@ -84,13 +101,21 @@ class FglairUnit:
             await session.close()
 
     async def _signed_in(self) -> None:
+        now = self._clock()
+        # RULE: a refused login is not tried again until its wait is over
+        if self._retry_at is not None and now < self._retry_at:
+            raise UnitUnavailableError(_login_refused(self._retry_at - now))
         try:
             if self._api.token_expired:
                 await self._api.async_sign_in()
             elif self._api.token_expiring_soon:
                 await self._api.async_refresh_auth()
         except AylaAuthError:
-            raise UnitUnavailableError(LOGIN_REFUSED) from None
+            wait = min(LOGIN_BACKOFF_SECONDS * 2**self._refusals, LOGIN_BACKOFF_LONGEST)
+            self._refusals += 1
+            self._retry_at = now + wait
+            raise UnitUnavailableError(_login_refused(wait)) from None
+        self._refusals, self._retry_at = 0, None
 
     async def _find(self) -> Any:  # noqa: ANN401 - a library FujitsuHVAC
         await self._signed_in()
