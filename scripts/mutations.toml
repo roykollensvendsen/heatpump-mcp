@@ -64,6 +64,12 @@ find = 'while self._clock\(\) \+ POLL_SECONDS \+ READ_SECONDS <= due:'
 replace = 'while self._clock() < due:'
 
 [[rule]]
+name = "a change is sent without renewing a login that is still valid"
+file = "src/heatpump_mcp/fglair.py"
+find = 'if not self\._api\.token_expired:'
+replace = 'if False:'
+
+[[rule]]
 name = "a login file others can read is refused"
 file = "src/heatpump_mcp/settings.py"
 find = 'if path.stat\(\).st_mode & \(stat.S_IRWXG \| stat.S_IRWXO\):'

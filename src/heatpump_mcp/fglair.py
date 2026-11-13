@@ -167,10 +167,17 @@ class FglairUnit:
         self._device = device
         return reading
 
+    async def _valid(self) -> None:
+        """Sign in only if the token has run out: a change takes seconds, and it has minutes left."""
+        # RULE: a change is sent without renewing a login that is still valid
+        if not self._api.token_expired:
+            return
+        await self._signed_in()
+
     async def ready(self) -> None:
         """Sign in and find the unit, so the send that follows is only the send."""
         try:
-            await self._signed_in()
+            await self._valid()
             if self._device is None:
                 self._device = await self._find()
         except UnitUnavailableError as error:
@@ -181,7 +188,7 @@ class FglairUnit:
     async def apply(self, change: Change) -> None:
         """Send `change` through the one setter Home Assistant uses for it."""
         try:
-            await self._signed_in()
+            await self._valid()
             device = self._device if self._device is not None else await self._find()
         except UnitUnavailableError as error:
             raise ChangeNotSentError(str(error)) from None

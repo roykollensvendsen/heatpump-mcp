@@ -46,7 +46,8 @@ READ_SECONDS = 6.0
 #: The longest sending one change may take.
 SEND_SECONDS = 3.0
 #: The longest signing in and finding the unit may take, before the send starts.
-#: The token is usually still fresh from the question, so this is most often instant.
+#: A token that still works is not renewed for a change, so this is instant unless
+#: the token has run out or the login was just entered again.
 READY_SECONDS = 2.0
 #: How long a confirm reads the unit back for, after sending. With READY_SECONDS and
 #: SEND_SECONDS it stays inside the Claude app's 15 seconds for a tool (the plugin
