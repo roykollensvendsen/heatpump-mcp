@@ -11,6 +11,7 @@ words, so neither the login nor the unit's identity can reach the voice.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
 import time
 from typing import TYPE_CHECKING, Any
@@ -34,7 +35,7 @@ from heatpump_mcp.unit import (
 
 if TYPE_CHECKING:
     import pathlib
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     from heatpump_mcp.settings import Settings
 
@@ -94,28 +95,81 @@ def _is_heat_pump(device: object) -> bool:
     return isinstance(device, FujitsuHVAC)
 
 
+class LoginWait:
+    """When the wait after a refused login ends, kept in a file so a restart keeps it.
+
+    The file holds that one time, in seconds since 1970, and nothing about the
+    login. A file that cannot be read or written is no wait: the wait is then
+    kept only while the plugin runs, as before.
+    """
+
+    def __init__(self, path: pathlib.Path, *, login_files: Iterable[pathlib.Path] = ()) -> None:
+        """Keep the wait in `path`; a change to any of `login_files` after it began ends it."""
+        self._path = path
+        self._login_files = tuple(login_files)
+
+    def end(self) -> float | None:
+        """When the kept wait ends, or None if there is none to keep to."""
+        try:
+            began = self._path.stat().st_mtime_ns
+            end = float(self._path.read_text())
+        except (OSError, ValueError):
+            return None
+        # RULE: a login entered after the wait began ends the wait
+        if any(_changed_at(f) > began for f in self._login_files):
+            return None
+        return end
+
+    def begin(self, end: float) -> None:
+        """Keep `end` as the time the wait ends."""
+        with contextlib.suppress(OSError):
+            self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._path.write_text(f"{end}\n")
+
+    def clear(self) -> None:
+        """Keep no wait."""
+        with contextlib.suppress(OSError):
+            self._path.unlink(missing_ok=True)
+
+
+def _changed_at(path: pathlib.Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
 class FglairUnit:
     """One Fujitsu heat pump on an FGLair account."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - each is a separate thing a test or the command line sets
         self,
         api: Any,  # noqa: ANN401 - the library's AylaApi has no type information
         *,
         unit_name: str | None = None,
         is_heat_pump: Callable[[object], bool] = _is_heat_pump,
         config_file: str = "config.toml",
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] = time.time,
+        wait: LoginWait | None = None,
     ) -> None:
-        """Use `api`, signed in or not; `unit_name` picks the unit when the account has several."""
+        """Use `api`, signed in or not; `unit_name` picks the unit when the account has several.
+
+        `clock` is the wall clock, so a wait kept in `wait` means the same after a restart.
+        """
         self._api = api
         self._unit_name = unit_name
         self._is_heat_pump = is_heat_pump
         self._config_file = config_file
         self._device: Any = None
         self._clock = clock
+        self._wait = wait
         self._refusals = 0
         self._retry_at: float | None = None
         self._signing_in = asyncio.Lock()
+        kept = wait.end() if wait is not None else None
+        if kept is not None:
+            # RULE: a refused login is not tried again after a restart until its wait is over
+            self._retry_at = min(kept, clock() + LOGIN_BACKOFF_LONGEST)
 
     async def close(self) -> None:
         """Close the cloud connection, if one was opened; nothing is sent."""
@@ -143,7 +197,11 @@ class FglairUnit:
             wait = min(LOGIN_BACKOFF_SECONDS * 2**self._refusals, LOGIN_BACKOFF_LONGEST)
             self._refusals += 1
             self._retry_at = now + wait
+            if self._wait is not None:
+                self._wait.begin(self._retry_at)
             raise UnitUnavailableError(_login_refused(wait)) from None
+        if self._retry_at is not None and self._wait is not None:
+            self._wait.clear()
         self._refusals, self._retry_at = 0, None
 
     async def _renewed(self) -> None:
@@ -258,8 +316,11 @@ async def _send(device: Any, change: Change) -> None:  # noqa: ANN401 - a librar
         raise KeyError(change.setting)
 
 
-def connect(settings: Settings) -> FglairUnit:
-    """The unit on the account in `settings`; nothing is sent until it is first read."""
+def connect(settings: Settings, *, wait: LoginWait | None = None) -> FglairUnit:
+    """The unit on the account in `settings`; nothing is sent until it is first read.
+
+    `wait`, when given, keeps the wait after a refused login across a restart.
+    """
     app_id, app_secret = FGLAIR_APP_CREDENTIALS[settings.region]
     api = new_ayla_api(
         settings.username,
@@ -269,7 +330,7 @@ def connect(settings: Settings) -> FglairUnit:
         europe=settings.region == "eu",
         timeout=API_TIMEOUT,
     )
-    return FglairUnit(api, unit_name=settings.unit_name, config_file=settings.config_file)
+    return FglairUnit(api, unit_name=settings.unit_name, config_file=settings.config_file, wait=wait)
 
 
 class LoginFolder:

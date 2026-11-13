@@ -53,6 +53,12 @@ def config_folder(env: Mapping[str, str]) -> pathlib.Path:
     return pathlib.Path(base).expanduser() / "heatpump-mcp"
 
 
+def state_folder(env: Mapping[str, str]) -> pathlib.Path:
+    """Where the plugin keeps what must outlast a restart, following XDG_STATE_HOME."""
+    base = env.get("XDG_STATE_HOME") or str(pathlib.Path(env.get("HOME", "~")) / ".local" / "state")
+    return pathlib.Path(base).expanduser() / "heatpump-mcp"
+
+
 def _secret(folder: pathlib.Path, name: str) -> str:
     path = folder / name
     if not path.is_file():

@@ -147,3 +147,15 @@ name = "one sign-in at a time"
 file = "src/heatpump_mcp/fglair.py"
 find = 'async with self\._signing_in:'
 replace = 'if True:'
+
+[[rule]]
+name = "a refused login is not tried again after a restart until its wait is over"
+file = "src/heatpump_mcp/fglair.py"
+find = 'self\._retry_at = min\(kept, clock\(\) \+ LOGIN_BACKOFF_LONGEST\)'
+replace = 'pass'
+
+[[rule]]
+name = "a login entered after the wait began ends the wait"
+file = "src/heatpump_mcp/fglair.py"
+find = 'if any\(_changed_at\(f\) > began for f in self\._login_files\):'
+replace = 'if False:'
