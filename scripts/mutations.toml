@@ -64,10 +64,16 @@ find = 'while self._clock\(\) \+ POLL_SECONDS \+ READ_SECONDS <= due:'
 replace = 'while self._clock() < due:'
 
 [[rule]]
-name = "a change is sent without renewing a login that is still valid"
+name = "a change is sent without renewing a login the library still accepts"
 file = "src/heatpump_mcp/fglair.py"
-find = 'if not self\._api\.token_expired:'
+find = 'if not \(self\._api\.token_expired or self\._api\.token_expiring_soon\):'
 replace = 'if False:'
+
+[[rule]]
+name = "a question renews a login that would run out before its yes"
+file = "src/heatpump_mcp/fglair.py"
+find = 'return left < LIBRARY_REFUSES_WITHIN \+ RENEW_AHEAD_SECONDS'
+replace = 'return left < LIBRARY_REFUSES_WITHIN'
 
 [[rule]]
 name = "a login file others can read is refused"

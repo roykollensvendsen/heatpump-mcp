@@ -41,6 +41,26 @@ if TYPE_CHECKING:
 #: holds each whole reading and change to tighter limits of its own.
 API_TIMEOUT = 10
 
+#: The library sends nothing on a token with fewer seconds than this left: every
+#: request's headers go through its check_auth, which refuses a token expiring soon.
+LIBRARY_REFUSES_WITHIN = 600
+#: How much earlier than that a reading renews the token, so one read at a question
+#: is still outside the library's window at the yes: it covers a reading kept in the
+#: status cache and the question's own life, thirty seconds each, with room to spare.
+RENEW_AHEAD_SECONDS = 120
+
+
+def _renew_due(api: Any) -> bool:  # noqa: ANN401 - the library's AylaApi
+    """Whether a reading should renew the token now, ahead of the library's window."""
+    expires = api.auth_expiration
+    if expires is None:
+        return True
+    # The library compares with its own naive datetime.now(); the expiry's class gives it.
+    left: float = (expires - type(expires).now()).total_seconds()
+    # RULE: a question renews a login that would run out before its yes
+    return left < LIBRARY_REFUSES_WITHIN + RENEW_AHEAD_SECONDS
+
+
 #: The library's errors that mean the cloud or the network did not answer.
 CLOUD_ERRORS = (AylaError, aiohttp.ClientError, KeyError, ValueError, TypeError)
 
@@ -109,7 +129,7 @@ class FglairUnit:
         try:
             if self._api.token_expired:
                 await self._api.async_sign_in()
-            elif self._api.token_expiring_soon:
+            elif _renew_due(self._api):
                 await self._api.async_refresh_auth()
         except AylaAuthError:
             wait = min(LOGIN_BACKOFF_SECONDS * 2**self._refusals, LOGIN_BACKOFF_LONGEST)
@@ -168,9 +188,9 @@ class FglairUnit:
         return reading
 
     async def _valid(self) -> None:
-        """Sign in only if the token has run out: a change takes seconds, and it has minutes left."""
-        # RULE: a change is sent without renewing a login that is still valid
-        if not self._api.token_expired:
+        """Renew the token only if the library would refuse it; a question renewed it ahead."""
+        # RULE: a change is sent without renewing a login the library still accepts
+        if not (self._api.token_expired or self._api.token_expiring_soon):
             return
         await self._signed_in()
 
