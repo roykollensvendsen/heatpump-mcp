@@ -10,6 +10,7 @@ words, so neither the login nor the unit's identity can reach the voice.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from typing import TYPE_CHECKING, Any
@@ -114,6 +115,7 @@ class FglairUnit:
         self._clock = clock
         self._refusals = 0
         self._retry_at: float | None = None
+        self._signing_in = asyncio.Lock()
 
     async def close(self) -> None:
         """Close the cloud connection, if one was opened; nothing is sent."""
@@ -122,6 +124,12 @@ class FglairUnit:
             await session.close()
 
     async def _signed_in(self) -> None:
+        """Sign in or renew as needed; a question arriving meanwhile waits and uses the result."""
+        # RULE: one sign-in at a time
+        async with self._signing_in:
+            await self._sign_in_now()
+
+    async def _sign_in_now(self) -> None:
         now = self._clock()
         # RULE: a refused login is not tried again until its wait is over
         if self._retry_at is not None and now < self._retry_at:
