@@ -17,6 +17,7 @@ import pytest
 ROOT = pathlib.Path(__file__).parent.parent
 
 LEAVES_FILES = """
+import os
 
 def test_it_writes_files_it_cannot_delete(tmp_path):
     (tmp_path / "plain.txt").write_text("x")
