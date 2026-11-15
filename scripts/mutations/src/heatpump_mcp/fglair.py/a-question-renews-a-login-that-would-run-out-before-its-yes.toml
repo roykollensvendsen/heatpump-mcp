@@ -1,0 +1,5 @@
+[[rule]]
+name = "a question renews a login that would run out before its yes"
+file = "src/heatpump_mcp/fglair.py"
+find = 'return left < LIBRARY_REFUSES_WITHIN \+ RENEW_AHEAD_SECONDS'
+replace = 'return left < LIBRARY_REFUSES_WITHIN'

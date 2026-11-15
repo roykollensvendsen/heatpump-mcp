@@ -1,0 +1,5 @@
+[[rule]]
+name = "a change that never reached the unit can be confirmed again"
+file = "src/heatpump_mcp/service.py"
+find = 'self._pending = pending$'
+replace = 'pass'

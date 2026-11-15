@@ -3,7 +3,8 @@
 A rule here is one line of source marked ``# RULE: what it says``. Three things
 have to be true of each, and none of them is true by writing the rule:
 
-* it has a row in ``scripts/mutations.toml``, so something switches it off;
+* it has a row, in a file of its own under ``scripts/mutations/``, so
+  something switches it off;
 * a test carries the rule's own words as its name;
 * switching it off turns *that* test red, which ``scripts/mutate.py`` checks.
 
@@ -16,7 +17,8 @@ leave a rule looking guarded while nothing guards it.
 import importlib.util
 import pathlib
 import re
-import tomllib
+
+import pytest
 
 ROOT = pathlib.Path(__file__).parent.parent
 MARKER = re.compile(r"^[ \t]*#\s*RULE:\s*(.+?)\s*$")
@@ -45,9 +47,8 @@ def marked_rules() -> set[str]:
 
 
 def rowed_rules() -> set[str]:
-    """Every rule the mutation table claims to switch off."""
-    table = tomllib.loads((ROOT / "scripts/mutations.toml").read_text())
-    return {str(rule["name"]) for rule in table.get("rule", [])}
+    """Every rule the mutation rows claim to switch off."""
+    return {str(rule["name"]) for rule in _mutate().all_rows()}
 
 
 def defined_test_names() -> set[str]:
@@ -77,3 +78,76 @@ def test_every_rule_has_a_test_named_after_it():
     missing = sorted(rule for rule in marked_rules() if name_for(rule) not in named)
     wanted = ", ".join(f"{name_for(rule)}()" for rule in missing)
     assert not missing, f"rules with no test named after them — write {wanted}"
+
+
+def _row(name, file="src/heatpump_mcp/service.py"):
+    return f"[[rule]]\nname = \"{name}\"\nfile = \"{file}\"\nfind = 'x'\nreplace = 'y'\n"
+
+
+def test_a_row_file_sits_in_its_source_s_folder_under_its_own_name(tmp_path):
+    """One row per file, named after the rule, in the folder of the source it switches off.
+
+    Then where a row lives is never a choice, and two pull requests only meet
+    when they add the same rule.
+    """
+    folder = tmp_path / "mutations"
+    service, fglair = folder / "src/heatpump_mcp/service.py", folder / "src/heatpump_mcp/fglair.py"
+    service.mkdir(parents=True)
+    fglair.mkdir(parents=True)
+    (service / "in-place.toml").write_text(_row("in place"))
+    (fglair / "wrong-folder.toml").write_text(_row("wrong folder"))
+    (service / "a-wrong-name.toml").write_text(_row("named otherwise"))
+    (service / "two-rows.toml").write_text(_row("two rows") + _row("in one file"))
+    found = " ".join(_mutate().misfiled(folder))
+    there = "src/heatpump_mcp/service.py"
+    assert f"src/heatpump_mcp/fglair.py/wrong-folder.toml should be {there}/wrong-folder.toml" in found
+    assert f"{there}/a-wrong-name.toml should be {there}/named-otherwise.toml" in found
+    assert f"{there}/two-rows.toml holds 2 rows" in found
+    assert "in-place" not in found
+
+
+def test_every_row_file_in_the_repository_is_where_its_rule_says():
+    misfiled = _mutate().misfiled()
+    assert not misfiled, "row files out of place: " + "; ".join(misfiled)
+
+
+def test_the_same_rule_in_two_row_files_is_refused_naming_both(tmp_path):
+    """A row moved and its old copy left behind would switch the rule off twice, and count it twice."""
+    folder = tmp_path / "mutations"
+    for source in ("service.py", "fglair.py"):
+        (folder / "src/heatpump_mcp" / source).mkdir(parents=True)
+        (folder / "src/heatpump_mcp" / source / "twice.toml").write_text(_row("twice"))
+    with pytest.raises(SystemExit) as refused:
+        _mutate().all_rows(folder)
+    said = str(refused.value)
+    assert "src/heatpump_mcp/fglair.py/twice.toml" in said
+    assert "src/heatpump_mcp/service.py/twice.toml" in said
+    assert "delete" in said
+
+
+def test_a_rule_whose_words_give_no_file_name_is_refused():
+    """A name with no letter or digit would be filed as ".toml", and the next one on top of it."""
+    with pytest.raises(SystemExit) as refused:
+        _mutate().row_path({"name": "?!", "file": "src/heatpump_mcp/service.py"})
+    assert "?!" in str(refused.value)
+    assert "letter" in str(refused.value)
+
+
+def test_a_row_s_folder_is_the_whole_path_of_the_file_it_switches_off():
+    """The same layout in every repository, whatever the language.
+
+    A shorter folder name would put src/app.ts and src/app/ together, and x.h
+    and x.c together.
+    """
+    row_path = _mutate().row_path
+    words = {"name": "a change needs a yes"}
+    assert str(row_path({**words, "file": "src/heatpump_mcp/service.py"})) == (
+        "src/heatpump_mcp/service.py/a-change-needs-a-yes.toml"
+    )
+    assert str(row_path({**words, "file": "src/app.ts"})) == "src/app.ts/a-change-needs-a-yes.toml"
+    assert row_path({**words, "file": "firmware/unit.h"}) != row_path({**words, "file": "firmware/unit.c"})
+
+
+def test_the_shared_table_is_gone():
+    """Rows added to the end of one shared table collided with every other pull request."""
+    assert not (ROOT / "scripts/mutations.toml").exists()

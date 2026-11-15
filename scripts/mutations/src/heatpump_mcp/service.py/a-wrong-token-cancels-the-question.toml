@@ -1,0 +1,5 @@
+[[rule]]
+name = "a wrong token cancels the question"
+file = "src/heatpump_mcp/service.py"
+find = 'if pending is None or not secrets.compare_digest\(pending.token, token\):'
+replace = 'if pending is None:'

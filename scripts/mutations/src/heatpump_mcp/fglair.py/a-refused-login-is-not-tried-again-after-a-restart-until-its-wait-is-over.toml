@@ -1,0 +1,5 @@
+[[rule]]
+name = "a refused login is not tried again after a restart until its wait is over"
+file = "src/heatpump_mcp/fglair.py"
+find = 'self\._retry_at = min\(kept, clock\(\) \+ LOGIN_BACKOFF_LONGEST\)'
+replace = 'pass'

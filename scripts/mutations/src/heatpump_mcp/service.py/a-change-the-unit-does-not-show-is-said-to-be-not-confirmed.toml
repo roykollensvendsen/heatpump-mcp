@@ -1,0 +1,5 @@
+[[rule]]
+name = "a change the unit does not show is said to be not confirmed"
+file = "src/heatpump_mcp/service.py"
+find = 'if reading is not None and change.shown_by\(reading\):'
+replace = 'if reading is not None:'

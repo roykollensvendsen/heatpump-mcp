@@ -1,0 +1,5 @@
+[[rule]]
+name = "a login entered after the wait began ends the wait"
+file = "src/heatpump_mcp/fglair.py"
+find = 'if any\(_changed_at\(f\) > began for f in self\._login_files\):'
+replace = 'if False:'

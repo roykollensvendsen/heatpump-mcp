@@ -1,0 +1,5 @@
+[[rule]]
+name = "a status is kept for thirty seconds"
+file = "src/heatpump_mcp/service.py"
+find = 'if self._cached is not None and now - self._cached\[0\] < STATUS_CACHE_SECONDS:'
+replace = 'if False:'

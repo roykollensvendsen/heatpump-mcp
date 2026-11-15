@@ -1,0 +1,5 @@
+[[rule]]
+name = "a sign-in that times out is never reported as sent"
+file = "src/heatpump_mcp/service.py"
+find = 'except \(UnitUnavailableError, TimeoutError\) as error:'
+replace = 'except UnitUnavailableError as error:'

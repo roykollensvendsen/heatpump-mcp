@@ -1,0 +1,5 @@
+[[rule]]
+name = "only one change is sent per ten seconds"
+file = "src/heatpump_mcp/service.py"
+find = 'if self._last_sent is not None and now - self._last_sent < CHANGE_GAP_SECONDS:'
+replace = 'if False:'

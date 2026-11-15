@@ -1,0 +1,6 @@
+[[rule]]
+name = "a refused renewal is followed by one full sign-in"
+file = "src/heatpump_mcp/fglair.py"
+find = 'await self._api.async_sign_in\(\)$'
+occurrence = 2
+replace = "raise"

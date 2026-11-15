@@ -1,0 +1,5 @@
+[[rule]]
+name = "a token expires after thirty seconds"
+file = "src/heatpump_mcp/service.py"
+find = 'if now - pending.asked_at >= TOKEN_SECONDS:'
+replace = 'if False:'

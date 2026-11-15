@@ -1,0 +1,5 @@
+[[rule]]
+name = "reading back never starts a read that would end after the window"
+file = "src/heatpump_mcp/service.py"
+find = 'while self._clock\(\) \+ POLL_SECONDS \+ READ_SECONDS <= due:'
+replace = 'while self._clock() < due:'
