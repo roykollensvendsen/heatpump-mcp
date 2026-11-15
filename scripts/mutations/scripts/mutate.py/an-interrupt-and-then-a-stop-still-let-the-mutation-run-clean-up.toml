@@ -1,0 +1,5 @@
+[[rule]]
+name = "an interrupt and then a stop still let the mutation run clean up"
+file = "scripts/mutate.py"
+find = '^    handled = \("SIGINT", "SIGTERM", "SIGHUP"\)$'
+replace = 'handled = ("SIGTERM", "SIGHUP")'

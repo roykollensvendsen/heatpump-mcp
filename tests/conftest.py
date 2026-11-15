@@ -131,3 +131,18 @@ def pytest_unconfigure(config):
     finally:
         with contextlib.suppress(OSError):
             os.close(run["lock"])
+
+
+@pytest.fixture(autouse=True)
+def _stop_handlers_kept():
+    """A test that runs a script's `main()` installs its stop handlers in this process.
+
+    Put the run's own back afterwards, so Ctrl-C still stops pytest and a later test of
+    those handlers starts from the run's own, not from what an earlier test left.
+    """
+    handled = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    before = {each: signal.getsignal(each) for each in handled}
+    yield
+    for each, handler in before.items():
+        # RULE: a test that installs stop handlers leaves none for the next test
+        signal.signal(each, handler)

@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import textwrap
+import time
 
 import pytest
 
@@ -330,20 +331,83 @@ def test_a_second_stop_cannot_cut_the_cleanup_short():
             signal.signal(s, handler)
 
 
-def test_a_stop_while_main_is_being_checked_out_still_removes_the_checkout(monkeypatch):
-    """The checkout is made inside the `try` that removes it.
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no polite stop signal to send")
+def test_an_interrupt_and_then_a_stop_still_let_the_ratchet_clean_up(tmp_path):
+    """GitHub cancels a job with an interrupt, then a stop; the stop must not end the cleanup halfway."""
+    from test_mutation_temp_files import interrupt_then_stop  # noqa: PLC0415
 
-    So a stop right after it cannot leave git's record of it behind.
+    assert interrupt_then_stop(ROOT / "scripts/ratchet.py", tmp_path)
+
+
+CLEANS_UP_SLOWLY = """
+import pathlib, sys, time
+here = pathlib.Path(sys.argv[1])
+try:
+    (here / "ready").touch()
+    time.sleep(60)
+finally:
+    time.sleep(1)
+    (here / "cleaned").touch()
+"""
+
+STOPPED_WHILE_RUNNING = """
+import sys
+sys.path.insert(0, sys.argv[1])
+import ratchet
+ratchet.stop_cleanly()
+ratchet._run(sys.executable, "-c", sys.argv[2], sys.argv[3])
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no polite stop signal to send")
+def test_a_stopped_ratchet_lets_the_command_it_runs_clean_up_first(tmp_path):
+    """The ratchet runs the tests and the mutation run; stopping it used to kill them outright.
+
+    Killed, the mutation run cannot put its switched-off line back and the tests cannot
+    remove their folder. Now the command is interrupted, as Ctrl-C would, and waited for.
     """
-    calls = []
+    run = subprocess.Popen(
+        [sys.executable, "-c", STOPPED_WHILE_RUNNING, str(ROOT / "scripts"), CLEANS_UP_SLOWLY, str(tmp_path)]
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while not (tmp_path / "ready").exists():
+            assert run.poll() is None, "the command never started"
+            assert time.monotonic() < deadline, "the command never started"
+            time.sleep(0.05)
+        run.send_signal(signal.SIGTERM)
+        assert run.wait(60) == 128 + signal.SIGTERM
+    finally:
+        run.kill()
+    assert (tmp_path / "cleaned").exists()
 
-    def run(*args, **_kwargs):
-        calls.append(args[:3])
-        if args[:3] == ("git", "worktree", "add"):
-            raise SystemExit(143)  # a stop the moment the checkout exists
-        return ratchet.subprocess.CompletedProcess(args, 0, "", "")
 
-    monkeypatch.setattr(ratchet, "_run", run)
-    with pytest.raises(SystemExit):
-        ratchet.measure_at("main")
-    assert ("git", "worktree", "remove") in calls
+def test_the_base_is_measured_where_no_other_branch_can_be_seen(tmp_path, monkeypatch):
+    """Main's own checks, such as its history scan, must not read the branch under review."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "t@example.org"],
+        ["config", "user.name", "t"],
+    ):
+        git(*args)
+    (repo / "notes.txt").write_text("main\n")
+    git("add", "notes.txt")
+    git("commit", "-q", "-m", "main")
+    git("switch", "-q", "-c", "under-review")
+    (repo / "notes.txt").write_text("under review\n")
+    git("commit", "-q", "-am", "under review")
+    git("switch", "-q", "main")
+    monkeypatch.setattr(ratchet, "ROOT", repo)
+    copy = tmp_path / "base"
+    ratchet.copy_of("main", copy)
+    seen = subprocess.run(
+        ["git", "log", "--all", "--format=%s"], cwd=copy, check=True, capture_output=True, text=True
+    ).stdout
+    assert (copy / "notes.txt").read_text() == "main\n"
+    assert "under review" not in seen

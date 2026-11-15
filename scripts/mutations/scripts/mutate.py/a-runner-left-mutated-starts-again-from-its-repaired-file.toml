@@ -1,0 +1,5 @@
+[[rule]]
+name = "a runner left mutated starts again from its repaired file"
+file = "scripts/mutate.py"
+find = 'os\.execv\(sys\.executable, \[sys\.executable, str\(repaired\), \*sys\.argv\[1:\]\]\)'
+replace = 'pass'
