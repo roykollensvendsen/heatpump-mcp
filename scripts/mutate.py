@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -36,7 +37,7 @@ import tomllib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 #: One row per file: scripts/mutations/<the row's file, whole>/<the rule's words>.toml. Every pull
@@ -47,6 +48,10 @@ ROWS = ROOT / "scripts/mutations"
 #: not run when the process is killed, so without this a hard stop leaves a
 #: source file switched off and the next person wondering why the suite is red.
 RECOVERY = ROOT / "scripts/.mutate-recovery.json"
+#: Held locked for the whole of a run, so a second run in the same checkout stops at once.
+RUNNING = ROOT / "scripts/.mutate-running.lock"
+#: The package the tests import, which must come from this checkout.
+PACKAGE = "heatpump_mcp"
 #: Where each suite run keeps its temporary files, one folder per run, removed when it
 #: ends. Outside the checkout, where a test making a git repository of its own would
 #: find this one instead; named after the checkout, so two never sweep each other's.
@@ -161,11 +166,83 @@ def _remove(folder: pathlib.Path) -> None:
     shutil.rmtree(folder, onexc=_writable_again)
 
 
+def _not_ours(why: str) -> str:
+    return (
+        f"{MUTATE_TMP} {why}. Its name is easy to guess in a temporary folder everyone shares,"
+        f" so this run will not use it: look at what is there, remove it if it is not yours"
+        f" (rm -r '{MUTATE_TMP}'), and run again."
+    )
+
+
+def own_folder() -> None:
+    """Make the run's folder if needed, and use it only if it is this user's and private.
+
+    Its name is easy to guess, so somebody else could make it first, or put a link there,
+    and steer what the sweep removes or where the tests write.
+    """
+    MUTATE_TMP.mkdir(mode=0o700, exist_ok=True)
+    try:
+        fd = os.open(MUTATE_TMP, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as error:  # a link, or something else, at the name
+        raise SystemExit(_not_ours(f"is not a folder of yours ({error.strerror})")) from None
+    try:
+        held = os.fstat(fd)
+    finally:
+        os.close(fd)
+    # RULE: the mutation run works only in a private folder of its own
+    if not stat.S_ISDIR(held.st_mode) or held.st_uid != os.getuid() or held.st_mode & 0o077:
+        raise SystemExit(_not_ours(f"is not a private folder of yours (mode {stat.S_IMODE(held.st_mode):o})"))
+
+
 def sweep() -> None:
     """Remove what an earlier run, killed before it could clean up, left behind."""
+    if not os.path.lexists(MUTATE_TMP):
+        return
+    own_folder()
     # RULE: a killed run's temporary files are swept at the next start
-    for left in MUTATE_TMP.iterdir() if MUTATE_TMP.is_dir() else []:
+    for left in MUTATE_TMP.iterdir():
         _remove(left)
+
+
+@contextlib.contextmanager
+def checkout_held() -> Iterator[None]:
+    """Hold this checkout's run lock for as long as the run lasts, or stop if another has it."""
+    fd = os.open(RUNNING, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            # RULE: only one mutation run at a time in a checkout
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            msg = f"A mutation run is already running in {ROOT}; let it finish, then run again."
+            raise SystemExit(msg) from None
+        yield
+    finally:
+        os.close(fd)
+
+
+def check_own_code(python: tuple[str, ...] = (sys.executable,)) -> None:
+    """Refuse to measure when the tests would import the package from another checkout.
+
+    Two checkouts sharing one environment measured each other's code, so every rule failed
+    alike. It is asked in a separate process, the way the tests will import it.
+    """
+    found = subprocess.run(  # noqa: S603 - this interpreter, with arguments written here
+        [*python, "-c", f"import {PACKAGE}; print({PACKAGE}.__file__)"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+    )
+    own = (ROOT / "src").resolve()
+    where = pathlib.Path(found.stdout.strip()).resolve() if found.returncode == 0 else None
+    # RULE: the mutation run measures only this checkout's code
+    if where is None or not where.is_relative_to(own):
+        seen = where or f"nowhere ({found.stderr.strip()[-300:]})"
+        msg = (
+            f"The tests would import {PACKAGE} from {seen}, not from {own}. Run `uv sync` in"
+            f" {ROOT}, so this checkout has its own environment, and run again."
+        )
+        raise SystemExit(msg)
 
 
 def repair() -> pathlib.Path | None:
@@ -209,7 +286,7 @@ def run_suite() -> tuple[int, list[str]]:
     # the wrong rule, so no bytecode is written at all.
     # RULE: two mutations never share a bytecode cache
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-    MUTATE_TMP.mkdir(parents=True, exist_ok=True)
+    own_folder()
     temporary = pathlib.Path(tempfile.mkdtemp(prefix="run-", dir=MUTATE_TMP))
     try:
         r = subprocess.run(  # noqa: S603 - this interpreter, with arguments written here
@@ -245,15 +322,18 @@ def run_suite() -> tuple[int, list[str]]:
     return int(m.group(1)) if m else 0, [f.split("::")[-1].split("[")[0] for f in failed]
 
 
-def prepare() -> None:
-    """Make a stop clean up, then undo what a killed run left: a mutated file and temporary files."""
-    stop_cleanly()
+def prepare(*, repair_only: bool = False) -> bool:
+    """Undo what a killed run left, a mutated file and temporary files; say whether to go on."""
     repaired = repair()
+    # RULE: a repair-only run puts back a left file and does nothing else
+    if repair_only:
+        return False
     if repaired is not None and repaired.resolve() == pathlib.Path(__file__).resolve():
         # This file was read before the repair, so the code running is still the mutated one.
         # RULE: a runner left mutated starts again from its repaired file
         os.execv(sys.executable, [sys.executable, str(repaired), *sys.argv[1:]])  # noqa: S606
     sweep()
+    return True
 
 
 def stop_cleanly() -> None:
@@ -285,15 +365,25 @@ def main() -> int:
     """Mutate every rule in turn, restore the tree, and report."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write", type=pathlib.Path, help="write the evidence table here")
+    parser.add_argument(
+        "--repair-only", action="store_true", help="put back what a killed run left mutated, and stop"
+    )
     args = parser.parse_args()
 
-    prepare()
+    stop_cleanly()
+    with checkout_held():
+        return measure_all(args.write) if prepare(repair_only=args.repair_only) else 0
+
+
+def measure_all(write: pathlib.Path | None) -> int:
+    """Switch every rule off in turn, run the tests each time, restore the tree, and report."""
     # RULE: an empty rule table is not a crash
     # A scaffolded repository starts with a folder that holds no rows.
     rules = all_rows()
     if not rules:
         print(f"no rows in {ROWS.relative_to(ROOT)}/ yet; add one per rule the code enforces")  # noqa: T201
         return 0
+    check_own_code()
     results = []
     lost: list[str] = []
     standing: tuple[pathlib.Path, str, str] | None = None
@@ -341,8 +431,8 @@ def main() -> int:
     if lost:
         print("CHANGED WHILE MUTATED, so left as they are:", ", ".join(sorted(set(lost))))  # noqa: T201
         print("Edit the tree while this runs and the result is not about your code.")  # noqa: T201
-    if args.write:
-        args.write.write_text(report(results, survived, lucky))
+    if write:
+        write.write_text(report(results, survived, lucky))
     return 1 if survived or lucky or lost else 0
 
 

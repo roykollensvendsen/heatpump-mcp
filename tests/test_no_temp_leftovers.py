@@ -23,6 +23,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import types
 
 import pytest
@@ -212,3 +213,67 @@ def test_a_test_that_installs_stop_handlers_leaves_none_for_the_next_test(run):
     """
     ran, _ = run(INSTALLS_THEN_CHECKS)
     assert ran.returncode == 0, ran.stdout[-1500:]
+
+
+def test_a_run_s_lock_never_stands_unlocked_under_its_own_name(tmp_path, monkeypatch):
+    """A sweep that found the lock file before the run had locked it would take the folder."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    conftest = _conftest()
+    locked = []
+    flock = fcntl.flock
+
+    def watched(fd, operation):
+        locked.append(pathlib.Path(f"/proc/self/fd/{fd}").readlink().name)
+        return flock(fd, operation)
+
+    monkeypatch.setattr(conftest.fcntl, "flock", watched)
+    config = types.SimpleNamespace(option=types.SimpleNamespace(basetemp=None), stash=pytest.Stash())
+    conftest.pytest_configure(config)
+    try:
+        folder = pathlib.Path(config.option.basetemp).parent
+        assert sorted(p.name for p in folder.iterdir()) == [".lock", "tmp"]
+    finally:
+        conftest.pytest_unconfigure(config)
+    assert locked == [".lock-starting"]
+
+
+def test_the_sweep_never_makes_a_lock(run, tmp_path):
+    """A lock the sweep made itself is one nobody holds, so it would take a starting run's folder."""
+    young = tmp_path / "tmp" / f"{PREFIX}young"
+    young.mkdir()
+    ran, _ = run(WRITES)
+    assert ran.returncode == 0, ran.stdout[-1500:]
+    assert young.is_dir()
+    assert list(young.iterdir()) == []
+
+
+def test_a_folder_with_no_lock_is_left_for_an_hour(run, tmp_path):
+    """It may be a run between making its folder and locking it; after an hour it is not."""
+    tmpdir = tmp_path / "tmp"
+    recent, old = tmpdir / f"{PREFIX}recent", tmpdir / f"{PREFIX}old"
+    for folder, age in ((recent, 30 * 60), (old, 2 * 60 * 60)):
+        folder.mkdir()
+        then = time.time() - age
+        os.utime(folder, (then, then))
+    ran, _ = run(WRITES)
+    assert ran.returncode == 0, ran.stdout[-1500:]
+    assert [p.name for p in tmpdir.iterdir()] == [recent.name]
+
+
+def test_a_folder_another_sweep_removed_meanwhile_is_passed_over(tmp_path, monkeypatch):
+    """Two runs starting together sweep the same folders; the one that loses the race goes on."""
+    conftest = _conftest()
+    for name in ("first", "second"):
+        (tmp_path / f"{PREFIX}{name}").mkdir()
+    removed = []
+
+    def remove(folder):
+        if folder.name.endswith("first"):
+            raise FileNotFoundError(folder)
+        removed.append(folder.name)
+
+    monkeypatch.setattr(conftest, "_left_by_a_killed_run", lambda _folder: True)
+    monkeypatch.setattr(conftest, "_remove", remove)
+    conftest._sweep(tmp_path)  # noqa: SLF001
+    assert removed == [f"{PREFIX}second"]

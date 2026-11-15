@@ -1,0 +1,5 @@
+[[rule]]
+name = "a folder another sweep removed meanwhile is passed over"
+file = "tests/conftest.py"
+find = 'with contextlib\.suppress\(FileNotFoundError\):$'
+replace = 'with contextlib.suppress():'

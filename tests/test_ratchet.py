@@ -6,8 +6,10 @@ counted here too, so that the code-health page can show them, and
 `tests/test_layers.py` refuses a breach outright.
 """
 
+import contextlib
 import importlib.util
 import json
+import os
 import pathlib
 import signal
 import subprocess
@@ -340,14 +342,23 @@ def test_an_interrupt_and_then_a_stop_still_let_the_ratchet_clean_up(tmp_path):
 
 
 CLEANS_UP_SLOWLY = """
-import pathlib, sys, time
+import os, pathlib, sys, time
 here = pathlib.Path(sys.argv[1])
+(here / "command-pid").write_text(str(os.getpid()))
 try:
     (here / "ready").touch()
-    time.sleep(60)
+    time.sleep(600)
 finally:
     time.sleep(1)
     (here / "cleaned").touch()
+"""
+
+#: A launcher in the way, as `uv run` is: it lets an interrupt pass it by, and waits.
+LAUNCHER = """
+import os, pathlib, signal, subprocess, sys
+pathlib.Path(sys.argv[2], "launcher-pid").write_text(str(os.getpid()))
+signal.signal(signal.SIGINT, lambda *_: None)
+subprocess.run([sys.executable, "-c", sys.argv[1], sys.argv[2]], check=False)
 """
 
 STOPPED_WHILE_RUNNING = """
@@ -355,7 +366,7 @@ import sys
 sys.path.insert(0, sys.argv[1])
 import ratchet
 ratchet.stop_cleanly()
-ratchet._run(sys.executable, "-c", sys.argv[2], sys.argv[3])
+ratchet._run(sys.executable, "-c", sys.argv[2], sys.argv[3], sys.argv[4])
 """
 
 
@@ -364,10 +375,20 @@ def test_a_stopped_ratchet_lets_the_command_it_runs_clean_up_first(tmp_path):
     """The ratchet runs the tests and the mutation run; stopping it used to kill them outright.
 
     Killed, the mutation run cannot put its switched-off line back and the tests cannot
-    remove their folder. Now the command is interrupted, as Ctrl-C would, and waited for.
+    remove their folder. Now every process the command started is interrupted, as Ctrl-C
+    would, and waited for. The command here is behind a launcher, as the mutation run is
+    behind `uv run`, which lets an interrupt sent to it alone go by.
     """
     run = subprocess.Popen(
-        [sys.executable, "-c", STOPPED_WHILE_RUNNING, str(ROOT / "scripts"), CLEANS_UP_SLOWLY, str(tmp_path)]
+        [
+            sys.executable,
+            "-c",
+            STOPPED_WHILE_RUNNING,
+            str(ROOT / "scripts"),
+            LAUNCHER,
+            CLEANS_UP_SLOWLY,
+            str(tmp_path),
+        ]
     )
     try:
         deadline = time.monotonic() + 60
@@ -376,10 +397,41 @@ def test_a_stopped_ratchet_lets_the_command_it_runs_clean_up_first(tmp_path):
             assert time.monotonic() < deadline, "the command never started"
             time.sleep(0.05)
         run.send_signal(signal.SIGTERM)
-        assert run.wait(60) == 128 + signal.SIGTERM
+        assert run.wait(30) == 128 + signal.SIGTERM
     finally:
         run.kill()
+        # Each by its own number, never by group: with the session switched off, the group
+        # is this test's own, and the mutation run's with it.
+        for name in ("launcher-pid", "command-pid"):
+            with contextlib.suppress(OSError, ValueError):
+                os.kill(int((tmp_path / name).read_text()), signal.SIGKILL)
     assert (tmp_path / "cleaned").exists()
+
+
+def test_the_base_s_commit_is_fetched_by_its_hash_whatever_the_clone_allows(tmp_path, monkeypatch):
+    """A clone may refuse to hand out a commit by its hash; the fetch says it may, for itself."""
+    calls = []
+
+    def run(*command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "0" * 40 + "\n", "")
+
+    monkeypatch.setattr(ratchet, "_run", run)
+    ratchet.copy_of("main", tmp_path / "base")
+    fetch = next(c for c in calls if "fetch" in c)
+    assert "uploadpack.allowAnySHA1InWant=true" in fetch
+    assert "protocol.version=2" in fetch
+
+
+def test_the_ratchet_measures_only_the_checkout_s_own_code(tmp_path, monkeypatch):
+    """Two checkouts sharing one environment measured each other's code, and every rule failed."""
+    monkeypatch.setattr(ratchet, "ROOT", tmp_path)
+    with pytest.raises(SystemExit) as refused:
+        ratchet.check_own_code((sys.executable,))
+    assert str(tmp_path / "src") in str(refused.value)
+    assert "uv sync" in str(refused.value)
+    monkeypatch.setattr(ratchet, "ROOT", ROOT)
+    ratchet.check_own_code((sys.executable,))
 
 
 def test_the_base_is_measured_where_no_other_branch_can_be_seen(tmp_path, monkeypatch):
