@@ -1,0 +1,5 @@
+[[rule]]
+name = "a test that installs stop handlers leaves none for the next test"
+file = "tests/conftest.py"
+find = '^        signal\.signal\(each, handler\)$'
+replace = 'pass'

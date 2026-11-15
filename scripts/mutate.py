@@ -168,18 +168,20 @@ def sweep() -> None:
         _remove(left)
 
 
-def repair() -> None:
-    """Put back a file an earlier run was killed in the middle of mutating."""
+def repair() -> pathlib.Path | None:
+    """Put back a file an earlier run was killed in the middle of mutating, and say which."""
     if not RECOVERY.is_file():
-        return
+        return None
     kept = json.loads(RECOVERY.read_text())
     path = ROOT / kept["file"]
     if path.read_text() == kept["mutated"]:
         path.write_text(kept["original"])
-        print(f"repaired {kept['file']}, left mutated by a run that was killed")  # noqa: T201
-    else:
-        print(f"{kept['file']} was left mutated and has since changed; not touching it")  # noqa: T201
+        print(f"repaired {kept['file']}, left mutated by a run that was killed", flush=True)  # noqa: T201
+        RECOVERY.unlink()
+        return path
+    print(f"{kept['file']} was left mutated and has since changed; not touching it")  # noqa: T201
     RECOVERY.unlink()
+    return None
 
 
 def restore(path: pathlib.Path, original: str, mutated: str) -> bool:
@@ -246,7 +248,11 @@ def run_suite() -> tuple[int, list[str]]:
 def prepare() -> None:
     """Make a stop clean up, then undo what a killed run left: a mutated file and temporary files."""
     stop_cleanly()
-    repair()
+    repaired = repair()
+    if repaired is not None and repaired.resolve() == pathlib.Path(__file__).resolve():
+        # This file was read before the repair, so the code running is still the mutated one.
+        # RULE: a runner left mutated starts again from its repaired file
+        os.execv(sys.executable, [sys.executable, str(repaired), *sys.argv[1:]])  # noqa: S606
     sweep()
 
 
@@ -262,10 +268,15 @@ def stop_cleanly() -> None:
         for later in ("SIGTERM", "SIGHUP", "SIGINT"):
             if hasattr(signal, later):
                 signal.signal(getattr(signal, later), signal.SIG_IGN)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
         raise SystemExit(128 + signum)
 
-    for name in ("SIGTERM", "SIGHUP"):
-        if hasattr(signal, name):  # Windows has neither
+    # The interrupt is handled too, or the stop that follows it would end its cleanup.
+    # RULE: an interrupt and then a stop still let the mutation run clean up
+    handled = ("SIGINT", "SIGTERM", "SIGHUP")
+    for name in handled:
+        if hasattr(signal, name):  # Windows has only the interrupt
             # RULE: a stopped mutation run still cleans up
             signal.signal(getattr(signal, name), stop)
 

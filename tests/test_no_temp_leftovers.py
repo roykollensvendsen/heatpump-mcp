@@ -189,3 +189,26 @@ def test_after_a_run_the_temporary_folder_and_the_stop_signals_are_as_they_were(
     assert (tempfile.tempdir, os.environ["TMPDIR"]) == (str(tmp_path), str(tmp_path))
     assert {name: signal.getsignal(getattr(signal, name)) for name in ("SIGTERM", "SIGHUP")} == before
     assert list(tmp_path.iterdir()) == []
+
+
+INSTALLS_THEN_CHECKS = """
+import signal
+
+def test_a_main_installs_its_stop_handlers():
+    for each in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(each, lambda *_: None)
+
+def test_the_next_test_starts_with_the_run_s_own():
+    for each in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        assert getattr(signal.getsignal(each), "__name__", "") != "<lambda>", each
+"""
+
+
+def test_a_test_that_installs_stop_handlers_leaves_none_for_the_next_test(run):
+    """A test that runs a script's `main()` installs its stop handlers in the test process.
+
+    Left there, Ctrl-C no longer stops pytest, and a later test of those handlers starts from
+    the wrong ones, which the mutation run reports as a rule killed by another test.
+    """
+    ran, _ = run(INSTALLS_THEN_CHECKS)
+    assert ran.returncode == 0, ran.stdout[-1500:]

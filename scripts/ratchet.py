@@ -299,7 +299,23 @@ def _run(
     cwd: Path = ROOT,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, check=False)  # noqa: S603
+    """Run a command and wait for it, also when this run is stopped meanwhile.
+
+    A stopped ratchet gives the command an interrupt, as Ctrl-C would, and waits for it as long
+    as it takes, so the mutation run can put its switched-off line back and the tests can remove
+    their folder. Killing it, as `subprocess.run` does, left both behind.
+    """
+    with subprocess.Popen(  # noqa: S603 - commands written in this file
+        command, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    ) as child:
+        try:
+            out, err = child.communicate()
+        except BaseException:
+            # RULE: a stopped ratchet lets the command it runs clean up first
+            child.send_signal(signal.SIGINT)
+            child.communicate()
+            raise
+    return subprocess.CompletedProcess(command, child.returncode, out, err)
 
 
 def measure(*, skip_mutation: bool = False, recorded: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -423,33 +439,52 @@ def base_levels(kept: Path | None, measure_base: Callable[[], dict[str, Any]]) -
     return measure_base()
 
 
+def copy_of(ref: str, copy: Path) -> None:
+    """Check `ref` out into `copy`, a repository holding that one commit and no other ref.
+
+    A worktree would share every branch of this clone, so the base's own checks, such as
+    its history scan, would read the branch under review.
+    """
+    sha = _run("git", "rev-parse", "--verify", f"{ref}^{{commit}}", cwd=ROOT)
+    if sha.returncode:
+        msg = f"Cannot find {ref} to measure it:\n{sha.stderr}"
+        raise SystemExit(msg)
+    copy.mkdir(parents=True)
+    # RULE: the base is measured where no other branch can be seen
+    steps = (
+        ("git", "init", "-q"),
+        ("git", "fetch", "-q", "--depth", "1", str(ROOT), sha.stdout.strip()),
+        ("git", "checkout", "-q", "--detach", "FETCH_HEAD"),
+    )
+    for step in steps:
+        done = _run(*step, cwd=copy)
+        if done.returncode:
+            msg = f"Cannot check out {ref} to measure it:\n{done.stderr}"
+            raise SystemExit(msg)
+
+
 def measure_at(ref: str) -> dict[str, Any]:
     """Measure `ref` in a copy of it, with this ratchet, so both sides are measured alike.
 
     The copy keeps its own tests and scripts unchanged: this ratchet runs from where it is
     and is pointed at the copy, so the base is measured exactly as it stands.
     """
+    # The copy is a repository of its own inside the temporary folder, so removing the folder
+    # removes all of it; a worktree also left a record in this clone.
     with tempfile.TemporaryDirectory() as tmp:
         copy, out = Path(tmp) / "base", Path(tmp) / "levels.json"
-        try:
-            # Inside the `try`, so a stop the moment the checkout exists still removes it.
-            added = _run("git", "worktree", "add", "--detach", str(copy), ref)
-            if added.returncode:
-                msg = f"Cannot check out {ref} to measure it:\n{added.stderr}"
-                raise SystemExit(msg)
-            synced = _run("uv", "sync", "--locked", "--all-extras", cwd=copy)
-            if synced.returncode:
-                msg = f"Cannot install {ref} to measure it:\n{synced.stderr[-2000:]}"
-                raise SystemExit(msg)
-            env = {**os.environ, "RATCHET_ROOT": str(copy)}
-            here = str(Path(__file__).resolve())
-            measured = _run("uv", "run", "python", here, "measure", "--out", str(out), cwd=copy, env=env)
-            if measured.returncode:
-                msg = f"Measuring {ref} failed:\n{measured.stdout[-2000:]}{measured.stderr[-2000:]}"
-                raise SystemExit(msg)
-            return dict(json.loads(out.read_text()))
-        finally:
-            _run("git", "worktree", "remove", "--force", str(copy))
+        copy_of(ref, copy)
+        synced = _run("uv", "sync", "--locked", "--all-extras", cwd=copy)
+        if synced.returncode:
+            msg = f"Cannot install {ref} to measure it:\n{synced.stderr[-2000:]}"
+            raise SystemExit(msg)
+        env = {**os.environ, "RATCHET_ROOT": str(copy)}
+        here = str(Path(__file__).resolve())
+        measured = _run("uv", "run", "python", here, "measure", "--out", str(out), cwd=copy, env=env)
+        if measured.returncode:
+            msg = f"Measuring {ref} failed:\n{measured.stdout[-2000:]}{measured.stderr[-2000:]}"
+            raise SystemExit(msg)
+        return dict(json.loads(out.read_text()))
 
 
 def stop_cleanly() -> None:
@@ -464,10 +499,15 @@ def stop_cleanly() -> None:
         for later in ("SIGTERM", "SIGHUP", "SIGINT"):
             if hasattr(signal, later):
                 signal.signal(getattr(signal, later), signal.SIG_IGN)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
         raise SystemExit(128 + signum)
 
-    for name in ("SIGTERM", "SIGHUP"):
-        if hasattr(signal, name):  # Windows has neither
+    # The interrupt is handled too, or the stop that follows it would end its cleanup.
+    # RULE: an interrupt and then a stop still let the ratchet clean up
+    handled = ("SIGINT", "SIGTERM", "SIGHUP")
+    for name in handled:
+        if hasattr(signal, name):  # Windows has only the interrupt
             # RULE: a stopped ratchet still removes its copy of main
             signal.signal(getattr(signal, name), stop)
 

@@ -9,6 +9,8 @@ whatever a killed run left is swept away at the next start.
 """
 
 import importlib.util
+import json
+import os
 import pathlib
 import signal
 import subprocess
@@ -162,3 +164,78 @@ def test_a_second_stop_cannot_cut_the_mutation_run_s_cleanup_short(tmp_path, mon
     finally:
         for s, handler in kept.items():
             signal.signal(s, handler)
+
+
+INTERRUPTED_THEN_STOPPED = """
+import importlib.util, pathlib, sys, time
+spec = importlib.util.spec_from_file_location("stopped_twice", sys.argv[1])
+script = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(script)
+here = pathlib.Path(sys.argv[2])
+script.stop_cleanly()
+try:
+    (here / "ready").touch()
+    time.sleep(60)
+finally:
+    (here / "cleaning").touch()
+    time.sleep(2)
+    (here / "cleaned").touch()
+"""
+
+
+def interrupt_then_stop(script, here):
+    """Interrupt `script`, then stop it while it cleans up, as GitHub cancels a job; True if it finished."""
+    run = subprocess.Popen([sys.executable, "-c", INTERRUPTED_THEN_STOPPED, str(script), str(here)])
+    try:
+        for step, sent in (("ready", signal.SIGINT), ("cleaning", signal.SIGTERM)):
+            deadline = time.monotonic() + 60
+            while not (here / step).exists():
+                assert run.poll() is None, f"never {step}"
+                assert time.monotonic() < deadline, f"never {step}"
+                time.sleep(0.05)
+            run.send_signal(sent)
+        run.wait(60)
+    finally:
+        run.kill()
+    return (here / "cleaned").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no polite stop signal to send")
+def test_an_interrupt_and_then_a_stop_still_let_the_mutation_run_clean_up(tmp_path):
+    """GitHub cancels a job with an interrupt, then a stop; the stop must not end the cleanup halfway."""
+    assert interrupt_then_stop(ROOT / "scripts/mutate.py", tmp_path)
+
+
+RUNNER_LEFT_MUTATED = "no rows in"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the runner is only run on Linux")
+def test_a_runner_left_mutated_starts_again_from_its_repaired_file(tmp_path):
+    """A run killed while it had mutated its own runner must not go on with the mutated code.
+
+    The next start repairs the file on disk, but the code it is running was read before the
+    repair, so it starts itself again to run the repaired one.
+    """
+    project = tmp_path / "project"
+    (project / "scripts" / "mutations").mkdir(parents=True)
+    runner = project / "scripts" / "mutate.py"
+    original = (ROOT / "scripts" / "mutate.py").read_text()
+    assert original.count(RUNNER_LEFT_MUTATED) == 1
+    mutated = original.replace(RUNNER_LEFT_MUTATED, "MUTATED " + RUNNER_LEFT_MUTATED)
+    runner.write_text(mutated)
+    (project / "scripts" / ".mutate-recovery.json").write_text(
+        json.dumps({"file": "scripts/mutate.py", "original": original, "mutated": mutated})
+    )
+    (tmp_path / "tmp").mkdir()
+    ran = subprocess.run(
+        [sys.executable, str(runner)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "TMPDIR": str(tmp_path / "tmp")},
+        timeout=60,
+    )
+    assert "repaired scripts/mutate.py" in ran.stdout, ran.stdout + ran.stderr
+    assert runner.read_text() == original
+    assert "MUTATED" not in ran.stdout, ran.stdout
+    assert RUNNER_LEFT_MUTATED in ran.stdout
