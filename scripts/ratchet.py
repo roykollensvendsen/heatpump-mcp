@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import json
 import os
 import re
@@ -325,8 +326,11 @@ def _run(
             try:
                 child.wait()
             except BaseException:
+                # To the whole session, not the command alone: behind `uv run`, the process
+                # that cleans up is a child of the command, and the launcher lets it go by.
                 # RULE: a stopped ratchet lets the command it runs clean up first
-                child.send_signal(signal.SIGINT)
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(child.pid, signal.SIGINT)
                 child.wait()  # no time limit: these runs never have one
                 raise
         out.seek(0)
@@ -334,8 +338,29 @@ def _run(
         return subprocess.CompletedProcess(command, child.returncode, out.read(), err.read())
 
 
+def check_own_code(python: tuple[str, ...] = ("uv", "run", "python")) -> None:
+    """Refuse to measure when the tests would import the package from another checkout.
+
+    Two checkouts sharing one environment measured each other's code, so every rule failed
+    alike. It is asked in a separate process, the way the tests will import it, because this
+    script may be run in another checkout's environment: the base's copy is measured so.
+    """
+    found = _run(*python, "-c", f"import {PACKAGE.name}; print({PACKAGE.name}.__file__)")
+    own = (ROOT / "src").resolve()
+    where = Path(found.stdout.strip()).resolve() if found.returncode == 0 else None
+    # RULE: the ratchet measures only the checkout's own code
+    if where is None or not where.is_relative_to(own):
+        seen = where or f"nowhere ({found.stderr.strip()[-300:]})"
+        msg = (
+            f"The tests would import {PACKAGE.name} from {seen}, not from {own}. Run `uv sync` in"
+            f" {ROOT}, so this checkout has its own environment, and run again."
+        )
+        raise SystemExit(msg)
+
+
 def measure(*, skip_mutation: bool = False, recorded: dict[str, Any] | None = None) -> dict[str, Any]:
     """Every measure, from the tree as it is."""
+    check_own_code()
     with tempfile.TemporaryDirectory() as tmp:
         report = Path(tmp) / "coverage.json"
         started = time.monotonic()
@@ -455,6 +480,11 @@ def base_levels(kept: Path | None, measure_base: Callable[[], dict[str, Any]]) -
     return measure_base()
 
 
+#: Git, told it may hand out any commit by its hash, which a clone's own settings can refuse.
+# RULE: the base's commit is fetched by its hash whatever the clone allows
+ANY_COMMIT = ("git", "-c", "protocol.version=2", "-c", "uploadpack.allowAnySHA1InWant=true")
+
+
 def copy_of(ref: str, copy: Path) -> None:
     """Check `ref` out into `copy`, a repository holding that one commit and no other ref.
 
@@ -469,7 +499,7 @@ def copy_of(ref: str, copy: Path) -> None:
     # RULE: the base is measured where no other branch can be seen
     steps = (
         ("git", "init", "-q"),
-        ("git", "fetch", "-q", "--depth", "1", str(ROOT), sha.stdout.strip()),
+        (*ANY_COMMIT, "fetch", "-q", "--depth", "1", str(ROOT), sha.stdout.strip()),
         ("git", "checkout", "-q", "--detach", "FETCH_HEAD"),
     )
     for step in steps:

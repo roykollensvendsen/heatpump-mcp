@@ -1,0 +1,5 @@
+[[rule]]
+name = "a run's lock never stands unlocked under its own name"
+file = "tests/conftest.py"
+find = '^    starting = folder / "\.lock-starting"$'
+replace = 'starting = folder / ".lock"'

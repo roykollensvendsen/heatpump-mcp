@@ -1,0 +1,5 @@
+[[rule]]
+name = "the base's commit is fetched by its hash whatever the clone allows"
+file = "scripts/ratchet.py"
+find = '^ANY_COMMIT = \("git", "-c", "protocol\.version=2", "-c", "uploadpack\.allowAnySHA1InWant=true"\)$'
+replace = 'ANY_COMMIT = ("git",)'

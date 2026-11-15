@@ -1,0 +1,5 @@
+[[rule]]
+name = "the sweep never makes a lock"
+file = "tests/conftest.py"
+find = 'lock = os\.open\(folder / "\.lock", os\.O_RDWR \| os\.O_NOFOLLOW\)'
+replace = 'lock = os.open(folder / ".lock", os.O_RDWR | os.O_NOFOLLOW | os.O_CREAT, 0o600)'

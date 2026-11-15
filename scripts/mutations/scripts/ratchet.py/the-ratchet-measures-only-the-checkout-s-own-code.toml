@@ -1,0 +1,5 @@
+[[rule]]
+name = "the ratchet measures only the checkout's own code"
+file = "scripts/ratchet.py"
+find = 'if where is None or not where\.is_relative_to\(own\):'
+replace = 'if False:'

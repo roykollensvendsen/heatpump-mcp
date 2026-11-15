@@ -15,6 +15,11 @@ a real folder of this user's is swept, never a link, and never pytest's shared
 folder, which other projects' runs are using. A run given ``--basetemp``, as
 the mutation run gives each of its runs, keeps to that folder, and whoever gave
 it removes it.
+
+Of the cleanup checklist's two designs this is A, the starting name, as in the
+bridge's ``held_folder.py``: the lock is made and taken under a starting name and
+only then renamed to ``.lock``, so a sweep never finds a lock nobody holds yet.
+A folder with no lock at all is left for an hour, and the sweep never makes one.
 """
 
 import contextlib
@@ -32,7 +37,7 @@ import pytest
 PREFIX = "heatpump-mcp-pytest-"
 #: A folder this young with no lock file may be a run that has not taken its lock yet. A guess:
 #: a run takes its lock a moment after it makes the folder, so any margin far above that will do.
-UNLOCKED_GRACE_SECONDS = 600
+UNLOCKED_GRACE_SECONDS = 60 * 60
 STOPS = tuple(getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name))
 _RUN = pytest.StashKey[dict]()
 
@@ -59,8 +64,11 @@ def _left_by_a_killed_run(folder):
     if not stat.S_ISDIR(seen.st_mode) or seen.st_uid != os.getuid():
         return False
     try:
-        lock = os.open(folder / ".lock", os.O_RDONLY | os.O_NOFOLLOW)
+        # Opened only, never made: a lock made here is one nobody holds.
+        # RULE: the sweep never makes a lock
+        lock = os.open(folder / ".lock", os.O_RDWR | os.O_NOFOLLOW)
     except FileNotFoundError:
+        # RULE: a folder with no lock is left for an hour
         return time.time() - seen.st_mtime > UNLOCKED_GRACE_SECONDS
     except OSError:
         return False
@@ -77,7 +85,10 @@ def _left_by_a_killed_run(folder):
 def _sweep(where):
     for left in where.glob(f"{PREFIX}*"):
         if _left_by_a_killed_run(left):
-            _remove(left)
+            # Another run starting at the same moment may have removed it first.
+            # RULE: a folder another sweep removed meanwhile is passed over
+            with contextlib.suppress(FileNotFoundError):
+                _remove(left)
 
 
 def _stop(signum, _frame):
@@ -96,8 +107,12 @@ def pytest_configure(config):
     where = pathlib.Path(tempfile.gettempdir())
     _sweep(where)
     folder = pathlib.Path(tempfile.mkdtemp(prefix=PREFIX, dir=where))
-    lock = os.open(folder / ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    # Made and locked under another name, then renamed, so `.lock` never stands unlocked.
+    # RULE: a run's lock never stands unlocked under its own name
+    starting = folder / ".lock-starting"
+    lock = os.open(starting, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     fcntl.flock(lock, fcntl.LOCK_EX)
+    starting.rename(folder / ".lock")
     # pytest empties the folder it is given, so it gets one inside, beside the lock.
     (folder / "tmp").mkdir()
     config.option.basetemp = str(folder / "pytest")

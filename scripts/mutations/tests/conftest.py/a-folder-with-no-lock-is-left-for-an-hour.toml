@@ -1,0 +1,5 @@
+[[rule]]
+name = "a folder with no lock is left for an hour"
+file = "tests/conftest.py"
+find = 'return time\.time\(\) - seen\.st_mtime > UNLOCKED_GRACE_SECONDS'
+replace = 'return True'
