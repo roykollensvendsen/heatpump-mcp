@@ -1,0 +1,5 @@
+[[rule]]
+name = "a command outlives a killed ratchet to finish its own cleanup"
+file = "scripts/ratchet.py"
+find = '^            stdout=out,$'
+replace = 'stdout=subprocess.PIPE,'

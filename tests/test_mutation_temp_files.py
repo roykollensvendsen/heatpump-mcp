@@ -200,10 +200,78 @@ def interrupt_then_stop(script, here):
     return (here / "cleaned").exists()
 
 
+STARTS_THEN_WAITS = """
+import pathlib, time
+
+def test_it_takes_a_while():
+    pathlib.Path("started").touch()
+    time.sleep(60)
+"""
+
+WHOLE_RUN_STOPPED = """
+import importlib.util, pathlib, sys, time
+spec = importlib.util.spec_from_file_location("mutate_stopped_twice", sys.argv[1])
+mutate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mutate)
+here = pathlib.Path(sys.argv[2])
+mutate.ROOT, mutate.ROWS = here / "project", here / "rows"
+mutate.RECOVERY, mutate.MUTATE_TMP = here / "recovery.json", here / "mutate-tmp"
+sys.argv = ["mutate.py"]
+rows = mutate.all_rows
+mutate.all_rows = lambda folder=None: rows(here / "rows")  # its default is the real tree's
+assert [r["file"] for r in mutate.all_rows()] == ["rule.py"], "would mutate the real tree"
+restore = mutate.restore
+
+def slow_restore(*args):
+    (here / "cleaning").touch()
+    time.sleep(2)
+    return restore(*args)
+
+mutate.restore = slow_restore
+sys.exit(mutate.main())
+"""
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no polite stop signal to send")
 def test_an_interrupt_and_then_a_stop_still_let_the_mutation_run_clean_up(tmp_path):
-    """GitHub cancels a job with an interrupt, then a stop; the stop must not end the cleanup halfway."""
-    assert interrupt_then_stop(ROOT / "scripts/mutate.py", tmp_path)
+    """GitHub cancels a job with an interrupt, then a stop; the stop must not end the cleanup halfway.
+
+    A whole run is stopped while the tests run against a switched-off rule: the rule's line
+    must be back, and the run's folder gone, although the stop came during the cleanup.
+    """
+    project = tmp_path / "project"
+    (project / "tests").mkdir(parents=True)
+    (project / "rule.py").write_text("x = 1\n")
+    (project / "tests" / "test_slow.py").write_text(STARTS_THEN_WAITS)
+    (tmp_path / "rows").mkdir()
+    (tmp_path / "rows" / "a.toml").write_text(
+        "[[rule]]\nname = \"a\"\nfile = \"rule.py\"\nfind = '^x = 1$'\nreplace = 'x = 2'\n"
+    )
+    run = subprocess.Popen(
+        [sys.executable, "-c", WHOLE_RUN_STOPPED, str(ROOT / "scripts/mutate.py"), str(tmp_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while not (project / "started").exists():
+            assert run.poll() is None, run.communicate()[0]
+            assert time.monotonic() < deadline, "the tests never started"
+            time.sleep(0.05)
+        assert (project / "rule.py").read_text() == "x = 2\n", "the rule was switched off"
+        run.send_signal(signal.SIGINT)
+        while not (tmp_path / "cleaning").exists():
+            assert run.poll() is None, run.communicate()[0]
+            assert time.monotonic() < deadline, "the cleanup never started"
+            time.sleep(0.05)
+        run.send_signal(signal.SIGTERM)
+        out, _ = run.communicate(timeout=60)
+    finally:
+        run.kill()
+    assert (project / "rule.py").read_text() == "x = 1\n", out
+    assert not (tmp_path / "recovery.json").exists()
+    assert not (tmp_path / "mutate-tmp").exists()
 
 
 RUNNER_LEFT_MUTATED = "no rows in"

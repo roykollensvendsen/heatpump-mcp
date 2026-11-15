@@ -1,0 +1,5 @@
+[[rule]]
+name = "the ratchet's command gets a stop only through the ratchet"
+file = "scripts/ratchet.py"
+find = '^            start_new_session=True,$'
+replace = 'start_new_session=False,'

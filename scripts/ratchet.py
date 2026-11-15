@@ -303,19 +303,35 @@ def _run(
 
     A stopped ratchet gives the command an interrupt, as Ctrl-C would, and waits for it as long
     as it takes, so the mutation run can put its switched-off line back and the tests can remove
-    their folder. Killing it, as `subprocess.run` does, left both behind.
+    their folder. Killing it, as `subprocess.run` does, left both behind. Should the command hang
+    there, `kill -9 -- -<its pid>` ends it and everything it started; the next mutation run puts
+    back a line it left switched off.
     """
-    with subprocess.Popen(  # noqa: S603 - commands written in this file
-        command, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    ) as child:
-        try:
-            out, err = child.communicate()
-        except BaseException:
-            # RULE: a stopped ratchet lets the command it runs clean up first
-            child.send_signal(signal.SIGINT)
-            child.communicate()
-            raise
-    return subprocess.CompletedProcess(command, child.returncode, out, err)
+    # Files, not pipes: a command whose reader is gone dies at its next write, which for the
+    # mutation run means a line left switched off, and a pipe nobody reads can fill and block.
+    with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
+        with subprocess.Popen(  # noqa: S603 - commands written in this file
+            command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            # RULE: a command outlives a killed ratchet to finish its own cleanup
+            stdout=out,
+            stderr=err,
+            # A session of its own, so a Ctrl-C in the terminal reaches it once, through here.
+            # RULE: the ratchet's command gets a stop only through the ratchet
+            start_new_session=True,
+        ) as child:
+            try:
+                child.wait()
+            except BaseException:
+                # RULE: a stopped ratchet lets the command it runs clean up first
+                child.send_signal(signal.SIGINT)
+                child.wait()  # no time limit: these runs never have one
+                raise
+        out.seek(0)
+        err.seek(0)
+        return subprocess.CompletedProcess(command, child.returncode, out.read(), err.read())
 
 
 def measure(*, skip_mutation: bool = False, recorded: dict[str, Any] | None = None) -> dict[str, Any]:
