@@ -325,13 +325,14 @@ def _run(
             try:
                 child.wait()
             except BaseException:
-                # To the whole session, not the command alone: behind `uv run`, the process
-                # that cleans up is a child of the command, and the launcher lets it go by.
+                # To the command alone, never its whole group: the command is `uv run`, which
+                # passes a Ctrl-C on to its own child, so one sent to the group as well would
+                # reach that child twice, and a second Ctrl-C cuts pytest's cleanup short.
                 # RULE: a stopped ratchet lets the command it runs clean up first
                 try:
-                    os.killpg(child.pid, signal.SIGINT)
+                    os.kill(child.pid, signal.SIGINT)
                 except ProcessLookupError:
-                    # No group is fine only for a command that has ended: one still running
+                    # Not found is fine only for a command that has ended: one still running
                     # would never hear the stop, while this waits for it.
                     # RULE: a stop is never lost on a command still running
                     if child.poll() is None:

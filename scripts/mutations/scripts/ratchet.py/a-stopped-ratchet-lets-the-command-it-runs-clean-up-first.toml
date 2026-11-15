@@ -1,5 +1,5 @@
 [[rule]]
 name = "a stopped ratchet lets the command it runs clean up first"
 file = "scripts/ratchet.py"
-find = 'os\.killpg\(child\.pid, signal\.SIGINT\)'
-replace = 'child.send_signal(signal.SIGINT)'
+find = 'os\.kill\(child\.pid, signal\.SIGINT\)'
+replace = 'os.killpg(child.pid, signal.SIGINT)'
