@@ -230,6 +230,8 @@ def run_suite() -> tuple[int, list[str]]:
     finally:
         # RULE: a suite run leaves no temporary files behind
         _remove(temporary)
+        with contextlib.suppress(OSError):  # still in use by another run in this checkout
+            MUTATE_TMP.rmdir()
     # --color=no covers the usual run; stripping covers a configuration that
     # turns colour back on, which would otherwise make every kill unattributable.
     # RULE: a coloured failure line is still attributed
