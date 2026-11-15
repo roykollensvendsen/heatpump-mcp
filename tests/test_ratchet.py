@@ -411,3 +411,63 @@ def test_the_base_is_measured_where_no_other_branch_can_be_seen(tmp_path, monkey
     ).stdout
     assert (copy / "notes.txt").read_text() == "main\n"
     assert "under review" not in seen
+
+
+OUTLIVES = """
+import os, pathlib, sys, time
+here = pathlib.Path(sys.argv[1])
+(here / "session").write_text(str(os.getsid(0) == os.getpid()))
+(here / "ready").touch()
+time.sleep(1)
+for _ in range(2000):
+    print("x" * 100, flush=True)
+(here / "finished").touch()
+"""
+
+KILLED_WHILE_RUNNING = """
+import sys
+sys.path.insert(0, sys.argv[1])
+import ratchet
+ratchet._run(sys.executable, "-c", sys.argv[2], sys.argv[3])
+"""
+
+
+def _killed_while_running(tmp_path):
+    """Start the ratchet on a command, kill it with no warning, and let the command run on."""
+    run = subprocess.Popen(
+        [sys.executable, "-c", KILLED_WHILE_RUNNING, str(ROOT / "scripts"), OUTLIVES, str(tmp_path)]
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while not (tmp_path / "ready").exists():
+            assert run.poll() is None, "the command never started"
+            assert time.monotonic() < deadline, "the command never started"
+            time.sleep(0.05)
+        run.kill()
+        run.wait(60)
+        while not (tmp_path / "finished").exists() and time.monotonic() < deadline:
+            time.sleep(0.1)
+    finally:
+        run.kill()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="only run on Linux")
+def test_a_command_outlives_a_killed_ratchet_to_finish_its_own_cleanup(tmp_path):
+    """Killed with `kill -9`, the ratchet can do nothing, so its command must manage alone.
+
+    Writing to a pipe whose reader is gone kills the writer, which for the mutation run means
+    a line left switched off. Its output goes to a file, which nobody has to read.
+    """
+    _killed_while_running(tmp_path)
+    assert (tmp_path / "finished").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="only run on Linux")
+def test_the_ratchet_s_command_gets_a_stop_only_through_the_ratchet(tmp_path):
+    """Ctrl-C in a terminal reaches every process in the foreground group at once.
+
+    The command runs in a session of its own, so it hears the stop once, from the ratchet,
+    which then waits for it.
+    """
+    _killed_while_running(tmp_path)
+    assert (tmp_path / "session").read_text() == "True"
