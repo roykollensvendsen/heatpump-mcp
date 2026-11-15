@@ -1,0 +1,5 @@
+[[rule]]
+name = "a stop is never lost on a command still running"
+file = "scripts/ratchet.py"
+find = '^\s*if child\.poll\(\) is None:$'
+replace = 'if False:'
