@@ -289,6 +289,12 @@ def run_suite() -> tuple[int, list[str]]:
     own_folder()
     temporary = pathlib.Path(tempfile.mkdtemp(prefix="run-", dir=MUTATE_TMP))
     try:
+        # Given its folder, the test setup keeps out of the way, so without this the tests
+        # would write to the computer's own temporary folder, and a switched-off cleanup
+        # would leave its files there. Pytest empties the folder it is given, so it gets its own.
+        (temporary / "tmp").mkdir()
+        # RULE: a switched-off cleanup leaves nothing in the computer's temporary folder
+        env["TMPDIR"] = str(temporary / "tmp")
         r = subprocess.run(  # noqa: S603 - this interpreter, with arguments written here
             [
                 sys.executable,
@@ -299,7 +305,7 @@ def run_suite() -> tuple[int, list[str]]:
                 "--color=no",
                 "-p",
                 "no:cacheprovider",
-                f"--basetemp={temporary}",
+                f"--basetemp={temporary / 'pytest'}",
             ],
             capture_output=True,
             text=True,

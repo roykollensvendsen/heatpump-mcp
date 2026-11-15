@@ -523,3 +523,44 @@ def test_the_ratchet_s_command_gets_a_stop_only_through_the_ratchet(tmp_path):
     """
     _killed_while_running(tmp_path)
     assert (tmp_path / "session").read_text() == "True"
+
+
+class _Stopped:
+    """A command the ratchet is stopped while waiting for, whose group can no longer be found."""
+
+    pid = 4242
+
+    def __init__(self, *_args, alive, **_kwargs):
+        self.alive, self.waits = alive, 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def wait(self):
+        self.waits += 1
+        if self.waits == 1:
+            raise SystemExit(143)  # a stop, as `stop_cleanly` turns one
+        return 0
+
+    def poll(self):
+        return None if self.alive else 0
+
+
+@pytest.mark.parametrize("alive", [True, False], ids=["still running", "already ended"])
+def test_a_stop_is_never_lost_on_a_command_still_running(monkeypatch, alive):
+    """No group to interrupt is fine for a command that has ended, and a fault for one that runs.
+
+    Ignoring it either way would let a command started without a session of its own run on,
+    never told to stop, while the ratchet waits for it.
+    """
+
+    def no_group(*_args):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(ratchet.subprocess, "Popen", lambda *a, **k: _Stopped(*a, alive=alive, **k))
+    monkeypatch.setattr(ratchet.os, "killpg", no_group)
+    with pytest.raises(ProcessLookupError if alive else SystemExit):
+        ratchet._run("true")  # noqa: SLF001

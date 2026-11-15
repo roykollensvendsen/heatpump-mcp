@@ -1,0 +1,5 @@
+[[rule]]
+name = "a switched-off cleanup leaves nothing in the computer's temporary folder"
+file = "scripts/mutate.py"
+find = 'env\["TMPDIR"\] = str\(temporary / "tmp"\)'
+replace = 'pass'

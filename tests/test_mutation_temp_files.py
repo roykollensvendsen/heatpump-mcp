@@ -53,6 +53,31 @@ def test_a_suite_run_leaves_no_temporary_files_behind(tmp_path, monkeypatch):
     assert list(mutate.MUTATE_TMP.glob("run-*")) == []
 
 
+LEAVES_A_FOLDER = """
+import tempfile
+
+def test_it_forgets_to_clean_up():
+    tempfile.mkdtemp()
+"""
+
+
+def test_a_switched_off_cleanup_leaves_nothing_in_the_computer_s_temporary_folder(tmp_path, monkeypatch):
+    """A rule switched off may be a cleanup, so what the tests make must stay in the run's folder.
+
+    Given its folder, the test setup keeps out of the way, so the tests would otherwise write
+    to the computer's own temporary folder, and a switched-off cleanup would leave it there.
+    """
+    mutate = _mutate(tmp_path, monkeypatch)
+    (mutate.ROOT / "tests" / "test_forgets.py").write_text(LEAVES_A_FOLDER)
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    monkeypatch.setenv("TMPDIR", str(outer))
+    failed, _ = mutate.run_suite()
+    assert failed == 0
+    assert list(outer.iterdir()) == []
+    assert not mutate.MUTATE_TMP.exists()
+
+
 def test_the_mutation_run_s_own_folder_is_removed_once_it_is_empty(tmp_path, monkeypatch):
     mutate = _mutate(tmp_path, monkeypatch)
     mutate.run_suite()

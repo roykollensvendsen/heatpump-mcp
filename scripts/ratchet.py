@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import contextlib
 import json
 import os
 import re
@@ -329,8 +328,14 @@ def _run(
                 # To the whole session, not the command alone: behind `uv run`, the process
                 # that cleans up is a child of the command, and the launcher lets it go by.
                 # RULE: a stopped ratchet lets the command it runs clean up first
-                with contextlib.suppress(ProcessLookupError):
+                try:
                     os.killpg(child.pid, signal.SIGINT)
+                except ProcessLookupError:
+                    # No group is fine only for a command that has ended: one still running
+                    # would never hear the stop, while this waits for it.
+                    # RULE: a stop is never lost on a command still running
+                    if child.poll() is None:
+                        raise
                 child.wait()  # no time limit: these runs never have one
                 raise
         out.seek(0)
