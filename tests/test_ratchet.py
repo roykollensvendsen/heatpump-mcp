@@ -9,6 +9,9 @@ counted here too, so that the code-health page can show them, and
 import importlib.util
 import json
 import pathlib
+import signal
+import subprocess
+import sys
 import textwrap
 
 import pytest
@@ -269,3 +272,78 @@ def test_the_mutation_tally_is_read_from_the_mutation_scripts_last_line():
     # A run that failed for any other reason is never a full score.
     assert ratchet.mutation_tally(full, returncode=1) == {"killed": 8, "total": 9}
     assert ratchet.mutation_tally("Traceback ...", returncode=1) == {"killed": 0, "total": 1}
+
+
+STOPPED_RATCHET = """
+import sys, tempfile, time
+sys.path.insert(0, sys.argv[1])
+import ratchet
+ratchet.stop_cleanly()
+with tempfile.TemporaryDirectory(dir=sys.argv[2]):
+    print("ready", flush=True)
+    time.sleep(60)
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no polite stop signal to send")
+def test_a_stopped_ratchet_still_removes_its_copy_of_main(tmp_path):
+    """The ratchet measures main in a copy of it, and a stop signal used to leave that copy.
+
+    Python runs no `finally` and no `with` exit on a stop signal unless it is told to.
+    """
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    script = tmp_path / "stopped.py"
+    script.write_text(STOPPED_RATCHET)
+    where = str(ROOT / "scripts")
+    run = subprocess.Popen(
+        [sys.executable, str(script), where, str(scratch)], stdout=subprocess.PIPE, text=True
+    )
+    try:
+        assert run.stdout.readline().strip() == "ready"
+        run.send_signal(signal.SIGTERM)
+        assert run.wait(60) == 128 + signal.SIGTERM
+    finally:
+        run.kill()
+    assert list(scratch.iterdir()) == []
+
+
+def test_the_ratchet_turns_a_stop_into_an_exit_before_it_starts(monkeypatch):
+    seen = []
+    monkeypatch.setattr(ratchet, "stop_cleanly", lambda: seen.append("stop"))
+    monkeypatch.setattr(sys, "argv", ["ratchet.py", "check"])
+    assert ratchet.main() == 1  # no --base: it stops before measuring anything
+    assert seen == ["stop"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no hang-up signal")
+def test_a_second_stop_cannot_cut_the_cleanup_short():
+    """GitHub sends an interrupt and then a stop; the second must not end the cleanup halfway."""
+    kept = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+    try:
+        ratchet.stop_cleanly()
+        with pytest.raises(SystemExit):
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        assert {s: signal.getsignal(s) for s in kept} == dict.fromkeys(kept, signal.SIG_IGN)
+    finally:
+        for s, handler in kept.items():
+            signal.signal(s, handler)
+
+
+def test_a_stop_while_main_is_being_checked_out_still_removes_the_checkout(monkeypatch):
+    """The checkout is made inside the `try` that removes it.
+
+    So a stop right after it cannot leave git's record of it behind.
+    """
+    calls = []
+
+    def run(*args, **_kwargs):
+        calls.append(args[:3])
+        if args[:3] == ("git", "worktree", "add"):
+            raise SystemExit(143)  # a stop the moment the checkout exists
+        return ratchet.subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(ratchet, "_run", run)
+    with pytest.raises(SystemExit):
+        ratchet.measure_at("main")
+    assert ("git", "worktree", "remove") in calls

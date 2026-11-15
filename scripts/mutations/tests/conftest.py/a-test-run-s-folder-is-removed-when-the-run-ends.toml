@@ -1,0 +1,5 @@
+[[rule]]
+name = "a test run's folder is removed when the run ends"
+file = "tests/conftest.py"
+find = '_remove\(run\["folder"\]\)'
+replace = 'pass'

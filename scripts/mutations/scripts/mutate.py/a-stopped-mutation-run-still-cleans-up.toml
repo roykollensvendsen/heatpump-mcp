@@ -1,0 +1,5 @@
+[[rule]]
+name = "a stopped mutation run still cleans up"
+file = "scripts/mutate.py"
+find = 'signal\.signal\(getattr\(signal, name\), stop\)'
+replace = 'pass'

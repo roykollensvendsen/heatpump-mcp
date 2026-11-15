@@ -35,9 +35,11 @@ def _mutate():
 def marked_rules() -> set[str]:
     """Every rule the source marks, by the words the marker gives it."""
     found = set()
-    # The checks this project added count too; the scripts the start-repo
-    # skill ships carry rules that skill proves.
-    scripts = [ROOT / "scripts" / n for n in ("private_data_scan.py", "ratchet.py")]
+    # The checks this project added count too, and so do the mutation run and the
+    # test setup that clean up after a run; the other scripts the start-repo skill
+    # ships carry rules that skill proves.
+    scripts = [ROOT / "scripts" / n for n in ("private_data_scan.py", "ratchet.py", "mutate.py")]
+    scripts.append(ROOT / "tests" / "conftest.py")
     for source in sorted([*(ROOT / "src").rglob("*.py"), *scripts]):
         for line in source.read_text().splitlines():
             match = MARKER.search(line)

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a folder whose lock is held is never swept"
+file = "tests/conftest.py"
+find = 'fcntl\.flock\(lock, fcntl\.LOCK_EX \| fcntl\.LOCK_NB\)'
+replace = 'pass'
