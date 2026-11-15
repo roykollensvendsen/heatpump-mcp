@@ -45,7 +45,7 @@ def test_a_suite_run_leaves_no_temporary_files_behind(tmp_path, monkeypatch):
     mutate = _mutate(tmp_path, monkeypatch)
     failed, _ = mutate.run_suite()
     assert failed == 0
-    assert list(mutate.MUTATE_TMP.iterdir()) == []
+    assert not mutate.MUTATE_TMP.exists()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows needs extra rights for a link, and has no 0755")
