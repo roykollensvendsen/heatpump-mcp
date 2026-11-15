@@ -342,9 +342,16 @@ def test_an_interrupt_and_then_a_stop_still_let_the_ratchet_clean_up(tmp_path):
 
 
 CLEANS_UP_SLOWLY = """
-import os, pathlib, sys, time
+import os, pathlib, signal, sys, time
 here = pathlib.Path(sys.argv[1])
 (here / "command-pid").write_text(str(os.getpid()))
+
+def interrupted(*_):
+    with (here / "interrupts").open("a") as seen:
+        seen.write("ctrl-c\\n")
+    raise KeyboardInterrupt
+
+signal.signal(signal.SIGINT, interrupted)
 try:
     (here / "ready").touch()
     time.sleep(600)
@@ -353,20 +360,15 @@ finally:
     (here / "cleaned").touch()
 """
 
-#: A launcher in the way, as `uv run` is: it lets an interrupt pass it by, and waits.
-LAUNCHER = """
-import os, pathlib, signal, subprocess, sys
-pathlib.Path(sys.argv[2], "launcher-pid").write_text(str(os.getpid()))
-signal.signal(signal.SIGINT, lambda *_: None)
-subprocess.run([sys.executable, "-c", sys.argv[1], sys.argv[2]], check=False)
-"""
+#: How the ratchet starts its runs: through uv, which passes a Ctrl-C on to its own child.
+THROUGH_UV = ("uv", "run", "--no-project", "python")
 
 STOPPED_WHILE_RUNNING = """
 import sys
 sys.path.insert(0, sys.argv[1])
 import ratchet
 ratchet.stop_cleanly()
-ratchet._run(sys.executable, "-c", sys.argv[2], sys.argv[3], sys.argv[4])
+ratchet._run(*sys.argv[2].split(), "-c", sys.argv[3], sys.argv[4])
 """
 
 
@@ -375,9 +377,10 @@ def test_a_stopped_ratchet_lets_the_command_it_runs_clean_up_first(tmp_path):
     """The ratchet runs the tests and the mutation run; stopping it used to kill them outright.
 
     Killed, the mutation run cannot put its switched-off line back and the tests cannot
-    remove their folder. Now every process the command started is interrupted, as Ctrl-C
-    would, and waited for. The command here is behind a launcher, as the mutation run is
-    behind `uv run`, which lets an interrupt sent to it alone go by.
+    remove their folder. Now the command gets one interrupt, as Ctrl-C would, and is waited
+    for. The command is behind uv here, as the real ones are, and uv passes an interrupt on
+    to its own child: one sent to the whole group as well would reach that child twice, and
+    a second Ctrl-C cuts a cleanup short.
     """
     run = subprocess.Popen(
         [
@@ -385,7 +388,7 @@ def test_a_stopped_ratchet_lets_the_command_it_runs_clean_up_first(tmp_path):
             "-c",
             STOPPED_WHILE_RUNNING,
             str(ROOT / "scripts"),
-            LAUNCHER,
+            " ".join(THROUGH_UV),
             CLEANS_UP_SLOWLY,
             str(tmp_path),
         ]
@@ -400,11 +403,14 @@ def test_a_stopped_ratchet_lets_the_command_it_runs_clean_up_first(tmp_path):
         assert run.wait(30) == 128 + signal.SIGTERM
     finally:
         run.kill()
-        # Each by its own number, never by group: with the session switched off, the group
-        # is this test's own, and the mutation run's with it.
-        for name in ("launcher-pid", "command-pid"):
-            with contextlib.suppress(OSError, ValueError):
-                os.kill(int((tmp_path / name).read_text()), signal.SIGKILL)
+        with contextlib.suppress(OSError, ValueError):
+            command = int((tmp_path / "command-pid").read_text())
+            # Never this test's own group: with the session switched off, the command shares
+            # it, and the mutation run with it.
+            if os.getpgid(command) != os.getpgrp():
+                os.killpg(os.getpgid(command), signal.SIGKILL)
+            os.kill(command, signal.SIGKILL)
+    assert (tmp_path / "interrupts").read_text() == "ctrl-c\n"
     assert (tmp_path / "cleaned").exists()
 
 
@@ -526,7 +532,7 @@ def test_the_ratchet_s_command_gets_a_stop_only_through_the_ratchet(tmp_path):
 
 
 class _Stopped:
-    """A command the ratchet is stopped while waiting for, whose group can no longer be found."""
+    """A command the ratchet is stopped while waiting for, which can no longer be found."""
 
     pid = 4242
 
@@ -551,16 +557,16 @@ class _Stopped:
 
 @pytest.mark.parametrize("alive", [True, False], ids=["still running", "already ended"])
 def test_a_stop_is_never_lost_on_a_command_still_running(monkeypatch, alive):
-    """No group to interrupt is fine for a command that has ended, and a fault for one that runs.
+    """No command to interrupt is fine when it has ended, and a fault when it still runs.
 
     Ignoring it either way would let a command started without a session of its own run on,
     never told to stop, while the ratchet waits for it.
     """
 
-    def no_group(*_args):
+    def gone(*_args):
         raise ProcessLookupError
 
     monkeypatch.setattr(ratchet.subprocess, "Popen", lambda *a, **k: _Stopped(*a, alive=alive, **k))
-    monkeypatch.setattr(ratchet.os, "killpg", no_group)
+    monkeypatch.setattr(ratchet.os, "kill", gone)
     with pytest.raises(ProcessLookupError if alive else SystemExit):
         ratchet._run("true")  # noqa: SLF001
