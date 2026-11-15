@@ -1,0 +1,5 @@
+[[rule]]
+name = "a kept wait ends at most the longest wait after it began"
+file = "src/heatpump_mcp/fglair.py"
+find = 'return min\(end, began / 1e9 \+ LOGIN_BACKOFF_LONGEST\)'
+replace = 'return end'
