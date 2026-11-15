@@ -4,24 +4,33 @@
 Pytest's default keeps every run's temporary files under one folder that all
 projects on the computer share, and a day of runs filled it. So each run here
 keeps them in a folder of its own, removed when the run ends, also when the run
-is interrupted. A folder a killed run left behind is swept at the start of the
-next run, unless the run that made it is still going. The shared folder is never
-swept, because other projects' runs are using it.
+fails, is interrupted or is stopped. The run holds a lock on its folder while it
+lasts. A folder whose lock nobody holds was left by a run that was killed, and is
+swept at the start of the next run. Only real folders of this project's own
+user are swept, never a link, and never pytest's shared folder, which other
+projects' runs are using.
 
-Each test runs a small pytest project with this suite's own conftest, in a
+Most tests run a small pytest project with this suite's own conftest, in a
 process of its own, with the temporary folder pointed at an empty one.
 """
 
+import fcntl
+import importlib.util
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import types
 
 import pytest
 
 CONFTEST = pathlib.Path(__file__).with_name("conftest.py")
+ROOT = CONFTEST.parent.parent
 WRITES = "def test_it(tmp_path):\n    (tmp_path / 'f').write_text('x')\n"
+PREFIX = "heatpump-mcp-pytest-"
 
 
 @pytest.fixture
@@ -29,56 +38,133 @@ def run(tmp_path):
     """Run one test file in a small project; give back how it ended and the temporary folder."""
     tmpdir, project = tmp_path / "tmp", tmp_path / "project"
     tmpdir.mkdir()
-    project.mkdir()
-    shutil.copy(CONFTEST, project / "conftest.py")
+    (project / "tests").mkdir(parents=True)
+    (project / "scripts").mkdir()
+    shutil.copy(CONFTEST, project / "tests" / "conftest.py")
+    shutil.copy(ROOT / "scripts" / "mutate.py", project / "scripts" / "mutate.py")
 
     def _run(test, *args):
-        (project / "test_one.py").write_text(test)
+        (project / "tests" / "test_one.py").write_text(test)
         ran = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *args],
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests", *args],
             cwd=project,
             env={**os.environ, "TMPDIR": str(tmpdir)},
             capture_output=True,
             text=True,
             check=False,
         )
-        return ran.returncode, tmpdir
+        return ran, tmpdir
 
     return _run
 
 
 def test_a_test_run_leaves_nothing_in_the_temporary_folder(run):
-    ended, tmpdir = run(WRITES)
-    assert ended == 0
+    ran, tmpdir = run(WRITES)
+    assert ran.returncode == 0, ran.stdout[-1500:]
     assert list(tmpdir.iterdir()) == []
 
 
-@pytest.mark.parametrize("ending", ["    assert False\n", "    raise KeyboardInterrupt\n"])
-def test_a_failed_or_interrupted_test_run_leaves_nothing_either(run, ending):
-    ended, tmpdir = run(WRITES + ending)
-    assert ended != 0
-    assert list(tmpdir.iterdir()) == []
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "    assert False\n",
+        "    raise KeyboardInterrupt\n",
+        "    import os, signal\n    os.kill(os.getpid(), signal.SIGTERM)\n",
+        "    import os, signal\n    os.kill(os.getpid(), signal.SIGHUP)\n",
+    ],
+    ids=["failed", "interrupted", "stopped", "hung-up"],
+)
+def test_a_failed_interrupted_or_stopped_test_run_leaves_nothing_either(run, ending):
+    ran, tmpdir = run(WRITES + ending)
+    assert ran.returncode != 0
+    assert list(tmpdir.iterdir()) == [], ran.stdout[-1500:]
+
+
+HOLD = """
+import fcntl, sys, time
+f = open(sys.argv[1], "w")
+fcntl.flock(f, fcntl.LOCK_EX)
+print("held", flush=True)
+time.sleep(60)
+"""
+
+
+def _holding(lock):
+    """A process that holds `lock` until it is ended, as a running test run does."""
+    holder = subprocess.Popen([sys.executable, "-c", HOLD, str(lock)], stdout=subprocess.PIPE, text=True)
+    assert holder.stdout.readline().strip() == "held"
+    return holder
 
 
 def test_a_killed_run_s_temporary_folder_is_swept_at_the_next_run(run, tmp_path):
     tmpdir = tmp_path / "tmp"
-    killed = tmpdir / "heatpump-mcp-pytest-999999999-abc"
+    killed = tmpdir / f"{PREFIX}killed"
     (killed / "shut").mkdir(parents=True)
+    (killed / ".lock").write_text("")
     (killed / "shut" / "inside.txt").write_text("x")
     (killed / "shut").chmod(0)
-    running = tmpdir / f"heatpump-mcp-pytest-{os.getpid()}-abc"
+    running = tmpdir / f"{PREFIX}running"
     running.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / ".lock").write_text("")
+    linked = tmpdir / f"{PREFIX}linked"
+    linked.symlink_to(outside)
     shared = tmpdir / "pytest-of-someone"
     shared.mkdir()
-    ended, _ = run(WRITES)
-    assert ended == 0
-    assert sorted(p.name for p in tmpdir.iterdir()) == sorted([running.name, shared.name])
+    holder = _holding(running / ".lock")
+    try:
+        ran, _ = run(WRITES)
+    finally:
+        holder.kill()
+        holder.wait()
+    assert ran.returncode == 0, ran.stdout[-1500:]
+    assert sorted(p.name for p in tmpdir.iterdir()) == sorted([running.name, linked.name, shared.name])
+    assert (outside / ".lock").exists()
 
 
 def test_a_run_given_its_own_temporary_folder_keeps_to_it(run, tmp_path):
     """The mutation run passes a folder of its own and removes it itself."""
     given = tmp_path / "given"
-    ended, tmpdir = run(WRITES, f"--basetemp={given}")
-    assert ended == 0
+    ran, tmpdir = run(WRITES, f"--basetemp={given}")
+    assert ran.returncode == 0, ran.stdout[-1500:]
     assert list(tmpdir.iterdir()) == []
     assert given.is_dir()
+
+
+def test_files_a_test_makes_with_tempfile_are_in_the_run_s_folder_too(run):
+    ran, tmpdir = run(
+        "import os, tempfile\n"
+        "def test_it():\n"
+        "    made = tempfile.mkdtemp()\n"
+        "    assert os.environ['TMPDIR'] == tempfile.gettempdir()\n"
+        f"    assert '{PREFIX}' in made\n"
+    )
+    assert ran.returncode == 0, ran.stdout[-1500:]
+    assert list(tmpdir.iterdir()) == []
+
+
+def _conftest():
+    spec = importlib.util.spec_from_file_location("heatpump_conftest", CONFTEST)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_after_a_run_the_temporary_folder_and_the_stop_signals_are_as_they_were(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    before = {name: signal.getsignal(getattr(signal, name)) for name in ("SIGTERM", "SIGHUP")}
+    conftest = _conftest()
+    config = types.SimpleNamespace(option=types.SimpleNamespace(basetemp=None), stash=pytest.Stash())
+    conftest.pytest_configure(config)
+    assert tempfile.gettempdir() != str(tmp_path)
+    with (
+        pytest.raises(BlockingIOError),
+        (pathlib.Path(config.option.basetemp).parent / ".lock").open() as lock,
+    ):
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    conftest.pytest_unconfigure(config)
+    assert (tempfile.tempdir, os.environ["TMPDIR"]) == (str(tmp_path), str(tmp_path))
+    assert {name: signal.getsignal(getattr(signal, name)) for name in ("SIGTERM", "SIGHUP")} == before
+    assert list(tmp_path.iterdir()) == []
