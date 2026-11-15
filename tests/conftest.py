@@ -30,7 +30,8 @@ import time
 import pytest
 
 PREFIX = "heatpump-mcp-pytest-"
-#: A folder this young with no lock file may be a run that has not taken its lock yet.
+#: A folder this young with no lock file may be a run that has not taken its lock yet. A guess:
+#: a run takes its lock a moment after it makes the folder, so any margin far above that will do.
 UNLOCKED_GRACE_SECONDS = 600
 STOPS = tuple(getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name))
 _RUN = pytest.StashKey[dict]()
@@ -54,6 +55,7 @@ def _left_by_a_killed_run(folder):
         seen = os.lstat(folder)
     except OSError:
         return False
+    # RULE: only a real folder of this user's is swept
     if not stat.S_ISDIR(seen.st_mode) or seen.st_uid != os.getuid():
         return False
     try:
@@ -63,6 +65,7 @@ def _left_by_a_killed_run(folder):
     except OSError:
         return False
     try:
+        # RULE: a folder whose lock is held is never swept
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         return False
@@ -123,6 +126,7 @@ def pytest_unconfigure(config):
     for stop, handler in run["signals"].items():
         signal.signal(stop, handler)
     try:
+        # RULE: a test run's folder is removed when the run ends
         _remove(run["folder"])
     finally:
         with contextlib.suppress(OSError):

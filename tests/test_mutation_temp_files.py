@@ -10,7 +10,10 @@ whatever a killed run left is swept away at the next start.
 
 import importlib.util
 import pathlib
+import signal
+import subprocess
 import sys
+import time
 
 import pytest
 
@@ -45,6 +48,12 @@ def test_a_suite_run_leaves_no_temporary_files_behind(tmp_path, monkeypatch):
     mutate = _mutate(tmp_path, monkeypatch)
     failed, _ = mutate.run_suite()
     assert failed == 0
+    assert list(mutate.MUTATE_TMP.glob("run-*")) == []
+
+
+def test_the_mutation_run_s_own_folder_is_removed_once_it_is_empty(tmp_path, monkeypatch):
+    mutate = _mutate(tmp_path, monkeypatch)
+    mutate.run_suite()
     assert not mutate.MUTATE_TMP.exists()
 
 
@@ -85,3 +94,71 @@ def test_a_passing_test_keeps_no_temporary_files():
     settings = (ROOT / "pyproject.toml").read_text()
     assert 'tmp_path_retention_policy = "failed"' in settings
     assert "tmp_path_retention_count = 1" in settings
+
+
+SLOW = "import time\n\ndef test_it_takes_a_while():\n    time.sleep(60)\n"
+
+STOPPED_RUN = """
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("mutate_stopped", sys.argv[1])
+mutate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mutate)
+mutate.ROOT = pathlib.Path(sys.argv[2])
+mutate.MUTATE_TMP = pathlib.Path(sys.argv[3])
+mutate.stop_cleanly()
+mutate.run_suite()
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no polite stop signal to send")
+def test_a_stopped_mutation_run_still_cleans_up(tmp_path):
+    """A run stopped politely, as CI cancels one or a terminal closes, removes its folder too.
+
+    Python runs no `finally` on a stop signal unless it is told to, so a cancelled run
+    left its whole folder of temporary files behind for the next start to find.
+    """
+    project, scratch = tmp_path / "project", tmp_path / "mutate-tmp"
+    (project / "tests").mkdir(parents=True)
+    (project / "tests" / "test_slow.py").write_text(SLOW)
+    script = tmp_path / "stopped_run.py"
+    script.write_text(STOPPED_RUN)
+    run = subprocess.Popen(
+        [sys.executable, str(script), str(ROOT / "scripts/mutate.py"), str(project), str(scratch)]
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while not (scratch.is_dir() and any(scratch.iterdir())):
+            assert time.monotonic() < deadline, "the run never made its folder"
+            time.sleep(0.1)
+        time.sleep(0.5)  # let pytest start inside the run's folder
+        run.send_signal(signal.SIGTERM)
+        assert run.wait(60) == 128 + signal.SIGTERM
+    finally:
+        run.kill()
+    assert not scratch.exists() or list(scratch.iterdir()) == []
+
+
+def test_the_mutation_run_turns_a_stop_into_an_exit_before_it_starts(tmp_path, monkeypatch):
+    mutate = _mutate(tmp_path, monkeypatch)
+    seen = []
+    monkeypatch.setattr(mutate, "stop_cleanly", lambda: seen.append("stop"))
+    monkeypatch.setattr(mutate, "all_rows", list)
+    monkeypatch.setattr(mutate, "ROWS", mutate.ROOT / "scripts/mutations")
+    monkeypatch.setattr(sys, "argv", ["mutate.py"])
+    mutate.main()
+    assert seen == ["stop"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no hang-up signal")
+def test_a_second_stop_cannot_cut_the_mutation_run_s_cleanup_short(tmp_path, monkeypatch):
+    """GitHub sends an interrupt and then a stop; the second must not end the cleanup halfway."""
+    mutate = _mutate(tmp_path, monkeypatch)
+    kept = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+    try:
+        mutate.stop_cleanly()
+        with pytest.raises(SystemExit):
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        assert {s: signal.getsignal(s) for s in kept} == dict.fromkeys(kept, signal.SIG_IGN)
+    finally:
+        for s, handler in kept.items():
+            signal.signal(s, handler)

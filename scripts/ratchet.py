@@ -33,6 +33,7 @@ import ast
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -430,11 +431,12 @@ def measure_at(ref: str) -> dict[str, Any]:
     """
     with tempfile.TemporaryDirectory() as tmp:
         copy, out = Path(tmp) / "base", Path(tmp) / "levels.json"
-        added = _run("git", "worktree", "add", "--detach", str(copy), ref)
-        if added.returncode:
-            msg = f"Cannot check out {ref} to measure it:\n{added.stderr}"
-            raise SystemExit(msg)
         try:
+            # Inside the `try`, so a stop the moment the checkout exists still removes it.
+            added = _run("git", "worktree", "add", "--detach", str(copy), ref)
+            if added.returncode:
+                msg = f"Cannot check out {ref} to measure it:\n{added.stderr}"
+                raise SystemExit(msg)
             synced = _run("uv", "sync", "--locked", "--all-extras", cwd=copy)
             if synced.returncode:
                 msg = f"Cannot install {ref} to measure it:\n{synced.stderr[-2000:]}"
@@ -450,6 +452,26 @@ def measure_at(ref: str) -> dict[str, Any]:
             _run("git", "worktree", "remove", "--force", str(copy))
 
 
+def stop_cleanly() -> None:
+    """Turn a polite stop into an ordinary exit, so every `with` and `finally` still runs.
+
+    CI cancels a run, and a closed terminal ends one, with a stop signal. Python's own answer to
+    it is to end at once, cleaning up nothing, which left whole folders in the temporary folder.
+    """
+
+    def stop(signum: int, _frame: object) -> None:
+        # A second signal (GitHub sends an interrupt, then a stop) must not cut the cleanup short.
+        for later in ("SIGTERM", "SIGHUP", "SIGINT"):
+            if hasattr(signal, later):
+                signal.signal(getattr(signal, later), signal.SIG_IGN)
+        raise SystemExit(128 + signum)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):  # Windows has neither
+            # RULE: a stopped ratchet still removes its copy of main
+            signal.signal(getattr(signal, name), stop)
+
+
 def main() -> int:
     """Measure, or measure and compare with the base."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
@@ -459,6 +481,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="where to write the levels measured now")
     parser.add_argument("--skip-mutation", action="store_true")
     args = parser.parse_args()
+    stop_cleanly()
     if args.action == "measure":
         now = measure()
         if args.out:

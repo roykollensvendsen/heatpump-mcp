@@ -58,7 +58,7 @@ def run(tmp_path):
     return _run
 
 
-def test_a_test_run_leaves_nothing_in_the_temporary_folder(run):
+def test_a_test_run_s_folder_is_removed_when_the_run_ends(run):
     ran, tmpdir = run(WRITES)
     assert ran.returncode == 0, ran.stdout[-1500:]
     assert list(tmpdir.iterdir()) == []
@@ -96,22 +96,30 @@ def _holding(lock):
     return holder
 
 
+def _left(tmpdir, name, *, locked=True):
+    """A folder a killed run left, with a mode-0 folder inside, and its lock file."""
+    left = tmpdir / f"{PREFIX}{name}"
+    (left / "shut").mkdir(parents=True)
+    if locked:
+        (left / ".lock").write_text("")
+    (left / "shut" / "inside.txt").write_text("x")
+    (left / "shut").chmod(0)
+    return left
+
+
 def test_a_killed_run_s_temporary_folder_is_swept_at_the_next_run(run, tmp_path):
     tmpdir = tmp_path / "tmp"
-    killed = tmpdir / f"{PREFIX}killed"
-    (killed / "shut").mkdir(parents=True)
-    (killed / ".lock").write_text("")
-    (killed / "shut" / "inside.txt").write_text("x")
-    (killed / "shut").chmod(0)
-    running = tmpdir / f"{PREFIX}running"
-    running.mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / ".lock").write_text("")
-    linked = tmpdir / f"{PREFIX}linked"
-    linked.symlink_to(outside)
+    _left(tmpdir, "killed")
     shared = tmpdir / "pytest-of-someone"
     shared.mkdir()
+    ran, _ = run(WRITES)
+    assert ran.returncode == 0, ran.stdout[-1500:]
+    assert [p.name for p in tmpdir.iterdir()] == [shared.name]
+
+
+def test_a_folder_whose_lock_is_held_is_never_swept(run, tmp_path):
+    tmpdir = tmp_path / "tmp"
+    running = _left(tmpdir, "running")
     holder = _holding(running / ".lock")
     try:
         ran, _ = run(WRITES)
@@ -119,8 +127,21 @@ def test_a_killed_run_s_temporary_folder_is_swept_at_the_next_run(run, tmp_path)
         holder.kill()
         holder.wait()
     assert ran.returncode == 0, ran.stdout[-1500:]
-    assert sorted(p.name for p in tmpdir.iterdir()) == sorted([running.name, linked.name, shared.name])
-    assert (outside / ".lock").exists()
+    assert [p.name for p in tmpdir.iterdir()] == [running.name]
+
+
+def test_only_a_real_folder_of_this_user_s_is_swept(run, tmp_path):
+    """A link is never followed, so a folder it points at keeps its files and its rights."""
+    tmpdir, outside = tmp_path / "tmp", tmp_path / "outside"
+    (outside / "kept").mkdir(parents=True)
+    (outside / ".lock").write_text("")
+    (outside / "kept").chmod(0o555)
+    linked = tmpdir / f"{PREFIX}linked"
+    linked.symlink_to(outside)
+    ran, _ = run(WRITES)
+    assert ran.returncode == 0, ran.stdout[-1500:]
+    assert [p.name for p in tmpdir.iterdir()] == [linked.name]
+    assert ((outside / "kept").stat().st_mode & 0o777, (outside / ".lock").exists()) == (0o555, True)
 
 
 def test_a_run_given_its_own_temporary_folder_keeps_to_it(run, tmp_path):

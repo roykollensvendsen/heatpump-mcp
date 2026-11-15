@@ -27,6 +27,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -231,6 +232,7 @@ def run_suite() -> tuple[int, list[str]]:
         # RULE: a suite run leaves no temporary files behind
         _remove(temporary)
         with contextlib.suppress(OSError):  # still in use by another run in this checkout
+            # RULE: the mutation run's own folder is removed once it is empty
             MUTATE_TMP.rmdir()
     # --color=no covers the usual run; stripping covers a configuration that
     # turns colour back on, which would otherwise make every kill unattributable.
@@ -241,10 +243,31 @@ def run_suite() -> tuple[int, list[str]]:
     return int(m.group(1)) if m else 0, [f.split("::")[-1].split("[")[0] for f in failed]
 
 
-def after_a_killed_run() -> None:
-    """Undo what an earlier run, killed part way, left: a mutated file and temporary files."""
+def prepare() -> None:
+    """Make a stop clean up, then undo what a killed run left: a mutated file and temporary files."""
+    stop_cleanly()
     repair()
     sweep()
+
+
+def stop_cleanly() -> None:
+    """Turn a polite stop into an ordinary exit, so every `with` and `finally` still runs.
+
+    CI cancels a run, and a closed terminal ends one, with a stop signal. Python's own answer to
+    it is to end at once, cleaning up nothing, which left whole folders in the temporary folder.
+    """
+
+    def stop(signum: int, _frame: object) -> None:
+        # A second signal (GitHub sends an interrupt, then a stop) must not cut the cleanup short.
+        for later in ("SIGTERM", "SIGHUP", "SIGINT"):
+            if hasattr(signal, later):
+                signal.signal(getattr(signal, later), signal.SIG_IGN)
+        raise SystemExit(128 + signum)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):  # Windows has neither
+            # RULE: a stopped mutation run still cleans up
+            signal.signal(getattr(signal, name), stop)
 
 
 def main() -> int:
@@ -253,7 +276,7 @@ def main() -> int:
     parser.add_argument("--write", type=pathlib.Path, help="write the evidence table here")
     args = parser.parse_args()
 
-    after_a_killed_run()
+    prepare()
     # RULE: an empty rule table is not a crash
     # A scaffolded repository starts with a folder that holds no rows.
     rules = all_rows()

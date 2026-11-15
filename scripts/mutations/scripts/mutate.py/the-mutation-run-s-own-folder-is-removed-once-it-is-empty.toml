@@ -1,0 +1,5 @@
+[[rule]]
+name = "the mutation run's own folder is removed once it is empty"
+file = "scripts/mutate.py"
+find = 'MUTATE_TMP\.rmdir\(\)'
+replace = 'pass'

@@ -1,0 +1,5 @@
+[[rule]]
+name = "only a real folder of this user's is swept"
+file = "tests/conftest.py"
+find = 'if not stat\.S_ISDIR\(seen\.st_mode\) or seen\.st_uid != os\.getuid\(\):'
+replace = 'if False:'
