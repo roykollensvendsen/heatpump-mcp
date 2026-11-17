@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The bounded waits every other test leans on, so a hang fails one test, not the run."""
 
+import contextlib
 import os
+import pathlib
 import signal
 import subprocess
 import sys
@@ -20,9 +22,13 @@ def test_a_child_that_runs_too_long_leaves_nothing_of_its_own_running(tmp_path):
     The shell's own grandchild holds the output open, as `uv run` or `shell=True` would.
     """
     grandchild = tmp_path / "grandchild"
-    script = f"sleep 600 & echo $! > {grandchild}; wait"
+    script = f"sleep 30 & echo $! > {grandchild}; wait"
+    started = time.monotonic()
     with pytest.raises(pytest.fail.Exception, match="still ran after 1 s"):
         run_bounded(["sh", "-c", script], within=1, capture_output=True, text=True)
+    # Ending the shell alone also "leaves nothing", once the grandchild's sleep runs out:
+    # until then it holds the output open, so the helper waits for it. Only the time tells.
+    assert time.monotonic() - started < 15, "the helper waited for the grandchild to end itself"
     left = int(grandchild.read_text())
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
@@ -31,7 +37,10 @@ def test_a_child_that_runs_too_long_leaves_nothing_of_its_own_running(tmp_path):
         except ProcessLookupError:
             return
         time.sleep(0.05)
-    os.kill(left, signal.SIGKILL)  # by its own number: it is this test's leftover, nothing else
+    # By its own number, and only while that number is still this test's sleep.
+    with contextlib.suppress(FileNotFoundError):
+        if pathlib.Path(f"/proc/{left}/cmdline").read_bytes().startswith(b"sleep\0"):
+            os.kill(left, signal.SIGKILL)
     pytest.fail("the child's own child still ran after it")
 
 
