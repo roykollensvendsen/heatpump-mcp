@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The FGLair driver, against a fake of the library's objects; no network is touched."""
 
-import asyncio
 from datetime import datetime, timedelta
 
 import aiohttp
@@ -9,6 +8,7 @@ import pytest
 from ayla_iot_unofficial import AylaAuthError
 from ayla_iot_unofficial.fujitsu_consts import FanSpeed, OpMode
 from ayla_iot_unofficial.fujitsu_hvac import DeviceOffline, SettingNotSupportedError
+from waits import within
 
 from heatpump_mcp.fglair import FglairUnit
 from heatpump_mcp.unit import (
@@ -92,7 +92,7 @@ def _unit(api, name=None):
 
 
 def _read(unit):
-    return asyncio.run(unit.read())
+    return within(unit.read())
 
 
 def test_a_reading_carries_what_the_cloud_reports():
@@ -154,34 +154,34 @@ def test_with_several_units_and_none_named_nothing_is_guessed():
 )
 def test_each_change_uses_the_one_setter_home_assistant_uses(change, call):
     device = FakeDevice()
-    asyncio.run(_unit(FakeApi(device)).apply(change))
+    within(_unit(FakeApi(device)).apply(change))
     assert device.calls == [call]
 
 
 def test_a_change_that_failed_before_it_was_sent_says_so():
     with pytest.raises(ChangeNotSentError):
-        asyncio.run(_unit(FakeApi(refuse_login=True)).apply(Change(Setting.FAN, Fan.LOW)))
+        within(_unit(FakeApi(refuse_login=True)).apply(Change(Setting.FAN, Fan.LOW)))
 
 
 def test_a_change_the_unit_cannot_make_is_refused_as_not_supported():
     device = FakeDevice()
     device.fail_send = SettingNotSupportedError("no quiet fan")
     with pytest.raises(ChangeNotSupportedError):
-        asyncio.run(_unit(FakeApi(device)).apply(Change(Setting.FAN, Fan.QUIET)))
+        within(_unit(FakeApi(device)).apply(Change(Setting.FAN, Fan.QUIET)))
 
 
 def test_an_offline_unit_is_never_sent_a_change():
     device = FakeDevice()
     device.fail_send = DeviceOffline()
     with pytest.raises(ChangeNotSentError):
-        asyncio.run(_unit(FakeApi(device)).apply(Change(Setting.FAN, Fan.LOW)))
+        within(_unit(FakeApi(device)).apply(Change(Setting.FAN, Fan.LOW)))
 
 
 def test_a_change_that_failed_while_being_sent_may_have_arrived():
     device = FakeDevice()
     device.fail_send = aiohttp.ClientError("connection reset")
     with pytest.raises(UnitUnavailableError) as raised:
-        asyncio.run(_unit(FakeApi(device)).apply(Change(Setting.FAN, Fan.LOW)))
+        within(_unit(FakeApi(device)).apply(Change(Setting.FAN, Fan.LOW)))
     assert not isinstance(raised.value, ChangeNotSentError)
 
 
@@ -224,18 +224,18 @@ def _from_folder(folder):
 def test_until_the_login_is_set_up_nothing_is_sent_and_the_reason_is_given(tmp_path):
     unit, builds = _from_folder(tmp_path)
     with pytest.raises(UnitUnavailableError, match="not set up"):
-        asyncio.run(unit.read())
+        within(unit.read())
     with pytest.raises(ChangeNotSentError, match="not set up"):
-        asyncio.run(unit.apply(Change(Setting.FAN, Fan.LOW)))
+        within(unit.apply(Change(Setting.FAN, Fan.LOW)))
     assert builds.apis == []
 
 
 def test_a_login_written_after_the_start_is_used_without_a_restart(tmp_path):
     unit, builds = _from_folder(tmp_path)
     with pytest.raises(UnitUnavailableError):
-        asyncio.run(unit.read())
+        within(unit.read())
     _write_login(tmp_path)
-    assert asyncio.run(unit.read()).set_temp == 21.0
+    assert within(unit.read()).set_temp == 21.0
     assert len(builds.apis) == 1
 
 
@@ -248,7 +248,7 @@ def test_a_login_entered_again_is_used_without_a_restart(tmp_path):
         _write_login(tmp_path, password="the-new-one")  # noqa: S106 - made up
         await unit.read()
 
-    asyncio.run(read_twice())
+    within(read_twice())
     old, new = builds.apis
     assert old.websession.closed
     assert new.settings.password == "the-new-one"  # noqa: S105 - made up
@@ -262,7 +262,7 @@ def test_an_unchanged_login_keeps_the_signed_in_cloud_client(tmp_path):
         await unit.read()
         await unit.read()
 
-    asyncio.run(read_twice())
+    within(read_twice())
     assert len(builds.apis) == 1
     assert builds.apis[0].sign_ins == 1
 
@@ -278,32 +278,32 @@ class FakeSession:
 def test_closing_the_unit_closes_the_cloud_connection():
     api = FakeApi()
     api.websession = FakeSession()
-    asyncio.run(_unit(api).close())
+    within(_unit(api).close())
     assert api.websession.closed
 
 
 def test_closing_a_unit_never_read_sends_nothing():
     api = FakeApi()
     api.websession = None
-    asyncio.run(_unit(api).close())
+    within(_unit(api).close())
     assert api.sign_ins == 0
 
 
 def test_getting_ready_signs_in_and_finds_the_unit_without_sending_anything():
     api = FakeApi()
     unit = _unit(api)
-    asyncio.run(unit.ready())
+    within(unit.ready())
     assert api.sign_ins == 1
     assert api.devices[0].calls == []
 
 
 def test_a_unit_that_cannot_get_ready_was_certainly_sent_nothing():
     with pytest.raises(ChangeNotSentError, match="refused the login"):
-        asyncio.run(_unit(FakeApi(refuse_login=True)).ready())
+        within(_unit(FakeApi(refuse_login=True)).ready())
 
 
 def test_without_a_login_getting_ready_says_what_to_set_up(tmp_path):
     unit, builds = _from_folder(tmp_path)
     with pytest.raises(ChangeNotSentError, match="not set up"):
-        asyncio.run(unit.ready())
+        within(unit.ready())
     assert builds.apis == []

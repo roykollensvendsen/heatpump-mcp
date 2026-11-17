@@ -5,11 +5,11 @@ A bare "not answering" leaves the owner with nothing to try, so it counts as a
 bug. Each case below makes one failure happen and checks the sentence it gives.
 """
 
-import asyncio
 import re
 
 import pytest
 from test_fglair import FakeApi, FakeDevice, _unit
+from waits import within
 
 from heatpump_mcp.service import TOKEN_SECONDS, HeatpumpService, Question, Refused
 from heatpump_mcp.settings import SettingsError, load_settings
@@ -31,7 +31,7 @@ def tells_what_to_do(say: str) -> bool:
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    return within(coro)
 
 
 class Clock:

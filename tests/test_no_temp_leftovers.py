@@ -27,6 +27,7 @@ import time
 import types
 
 import pytest
+from waits import SECONDS, line_within
 
 CONFTEST = pathlib.Path(__file__).with_name("conftest.py")
 ROOT = CONFTEST.parent.parent
@@ -53,6 +54,7 @@ def run(tmp_path):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SECONDS,
         )
         return ran, tmpdir
 
@@ -93,7 +95,7 @@ time.sleep(60)
 def _holding(lock):
     """A process that holds `lock` until it is ended, as a running test run does."""
     holder = subprocess.Popen([sys.executable, "-c", HOLD, str(lock)], stdout=subprocess.PIPE, text=True)
-    assert holder.stdout.readline().strip() == "held"
+    assert line_within(holder.stdout).strip() == "held"
     return holder
 
 
@@ -126,7 +128,7 @@ def test_a_folder_whose_lock_is_held_is_never_swept(run, tmp_path):
         ran, _ = run(WRITES)
     finally:
         holder.kill()
-        holder.wait()
+        holder.wait(SECONDS)
     assert ran.returncode == 0, ran.stdout[-1500:]
     assert [p.name for p in tmpdir.iterdir()] == [running.name]
 

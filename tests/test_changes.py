@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Changing the heat pump: a question first, a spoken yes, and a reading afterwards."""
 
-import asyncio
 import dataclasses
 
 import pytest
+from waits import within
 
 from heatpump_mcp.service import (
     CHANGE_GAP_SECONDS,
@@ -71,7 +71,7 @@ def _service(unit=None, clock=None):
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    return within(coro)
 
 
 def _ask_and_confirm(service, setting, value):

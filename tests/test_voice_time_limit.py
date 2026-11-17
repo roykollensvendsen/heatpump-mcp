@@ -10,6 +10,7 @@ up from those limits, leaves room inside the 15 seconds.
 import asyncio
 
 import pytest
+from waits import within
 
 from heatpump_mcp import service as service_module
 from heatpump_mcp.service import (
@@ -74,10 +75,10 @@ def test_reading_back_never_starts_a_read_that_would_end_after_the_window():
     clock = Clock()
     unit = SlowReads(clock)
     service = HeatpumpService(unit, clock=clock, sleep=clock.sleep)
-    question = asyncio.run(service.request(Setting.FAN, "low"))
+    question = within(service.request(Setting.FAN, "low"))
     assert isinstance(question, Question)
     started = clock.now
-    done = asyncio.run(service.confirm(question.token))
+    done = within(service.confirm(question.token))
     assert isinstance(done, Done)
     assert clock.now - started <= READ_BACK_SECONDS
     assert clock.now - started >= POLL_SECONDS + READ_SECONDS  # it did read back once
@@ -114,7 +115,7 @@ def short_limits(monkeypatch):
 
 @pytest.mark.usefixtures("short_limits")
 def test_a_read_that_hangs_is_given_up_and_said_to_be_unreachable():
-    status = asyncio.run(HeatpumpService(Hanging(hang_read=True)).status())
+    status = within(HeatpumpService(Hanging(hang_read=True)).status())
     assert status.reading is None
     assert "could not reach" in status.say
 
@@ -130,7 +131,7 @@ def test_a_change_that_may_have_reached_the_unit_is_read_back_and_never_sent_aga
         second = await service.confirm(question.token)
         return first, second
 
-    first, second = asyncio.run(ask_and_confirm())
+    first, second = within(ask_and_confirm())
     assert isinstance(first, Done)
     assert not first.confirmed
     assert "no open question" in second.say
@@ -149,7 +150,7 @@ def test_a_sign_in_that_times_out_is_never_reported_as_sent():
         second = await service.confirm(question.token)  # at once: no change was sent, so no wait
         return first, second
 
-    first, second = asyncio.run(ask_and_confirm_twice())
+    first, second = within(ask_and_confirm_twice())
     assert not isinstance(first, Done)
     assert "nothing changed" in first.say
     assert isinstance(second, Done)

@@ -8,8 +8,9 @@ its own; no two open with the same words. The figure is the one tv-mcp
 measured on 2026-11-10.
 """
 
-import asyncio
 import re
+
+from waits import within
 
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService
@@ -19,7 +20,7 @@ OPENING_LIMIT = 26
 
 
 def _tools():
-    return asyncio.run(build_server(HeatpumpService(SimulatedUnit())).list_tools())
+    return within(build_server(HeatpumpService(SimulatedUnit())).list_tools())
 
 
 def _opening(tool):

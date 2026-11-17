@@ -18,6 +18,7 @@ import textwrap
 import time
 
 import pytest
+from waits import SECONDS, line_within
 
 ROOT = pathlib.Path(__file__).parent.parent
 
@@ -303,7 +304,7 @@ def test_a_stopped_ratchet_still_removes_its_copy_of_main(tmp_path):
         [sys.executable, str(script), where, str(scratch)], stdout=subprocess.PIPE, text=True
     )
     try:
-        assert run.stdout.readline().strip() == "ready"
+        assert line_within(run.stdout).strip() == "ready"
         run.send_signal(signal.SIGTERM)
         assert run.wait(60) == 128 + signal.SIGTERM
     finally:
@@ -446,7 +447,7 @@ def test_the_base_is_measured_where_no_other_branch_can_be_seen(tmp_path, monkey
     repo.mkdir()
 
     def git(*args):
-        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, timeout=SECONDS)
 
     for args in (
         ["init", "-q", "-b", "main"],
@@ -465,7 +466,12 @@ def test_the_base_is_measured_where_no_other_branch_can_be_seen(tmp_path, monkey
     copy = tmp_path / "base"
     ratchet.copy_of("main", copy)
     seen = subprocess.run(
-        ["git", "log", "--all", "--format=%s"], cwd=copy, check=True, capture_output=True, text=True
+        ["git", "log", "--all", "--format=%s"],
+        cwd=copy,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=SECONDS,
     ).stdout
     assert (copy / "notes.txt").read_text() == "main\n"
     assert "under review" not in seen
