@@ -2,8 +2,8 @@
 """The tools the voice sees, called as the bridge calls them."""
 
 import pytest
+from bounded import within
 from mcp.server.mcpserver.exceptions import ToolError
-from waits import within
 
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService

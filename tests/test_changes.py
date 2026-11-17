@@ -4,7 +4,7 @@
 import dataclasses
 
 import pytest
-from waits import within
+from bounded import within
 
 from heatpump_mcp.service import (
     CHANGE_GAP_SECONDS,

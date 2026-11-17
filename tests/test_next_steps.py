@@ -8,8 +8,8 @@ bug. Each case below makes one failure happen and checks the sentence it gives.
 import re
 
 import pytest
+from bounded import within
 from test_fglair import FakeApi, FakeDevice, _unit
-from waits import within
 
 from heatpump_mcp.service import TOKEN_SECONDS, HeatpumpService, Question, Refused
 from heatpump_mcp.settings import SettingsError, load_settings

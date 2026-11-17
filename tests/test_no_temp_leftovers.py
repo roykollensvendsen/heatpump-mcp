@@ -27,7 +27,7 @@ import time
 import types
 
 import pytest
-from waits import SECONDS, line_within
+from bounded import SECONDS, line_within, run_bounded
 
 CONFTEST = pathlib.Path(__file__).with_name("conftest.py")
 ROOT = CONFTEST.parent.parent
@@ -47,14 +47,12 @@ def run(tmp_path):
 
     def _run(test, *args):
         (project / "tests" / "test_one.py").write_text(test)
-        ran = subprocess.run(
+        ran = run_bounded(
             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests", *args],
             cwd=project,
             env={**os.environ, "TMPDIR": str(tmpdir)},
             capture_output=True,
             text=True,
-            check=False,
-            timeout=SECONDS,
         )
         return ran, tmpdir
 

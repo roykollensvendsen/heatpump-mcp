@@ -1,0 +1,5 @@
+[[rule]]
+name = "a real mutation run has no time limit"
+file = "scripts/mutate.py"
+find = '^def run_suite\(timeout: float \| None = None\)'
+replace = 'def run_suite(timeout: float | None = 300) -> tuple[int, list[str]]:'

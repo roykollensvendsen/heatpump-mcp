@@ -10,7 +10,7 @@ up from those limits, leaves room inside the 15 seconds.
 import asyncio
 
 import pytest
-from waits import within
+from bounded import within
 
 from heatpump_mcp import service as service_module
 from heatpump_mcp.service import (

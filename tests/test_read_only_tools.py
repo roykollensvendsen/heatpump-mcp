@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The tools that only look are marked read-only, and only those (the plugin standard's rule 9)."""
 
-from waits import within
+from bounded import within
 
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService

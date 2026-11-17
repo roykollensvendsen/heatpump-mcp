@@ -10,7 +10,7 @@ measured on 2026-11-10.
 
 import re
 
-from waits import within
+from bounded import within
 
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService

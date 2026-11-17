@@ -10,8 +10,8 @@ sent over and over. No network is touched.
 
 import pytest
 from ayla_iot_unofficial import AylaAuthError
+from bounded import within
 from test_fglair import FakeApi, FakeDevice
-from waits import within
 
 from heatpump_mcp.fglair import LOGIN_BACKOFF_SECONDS, FglairUnit
 from heatpump_mcp.unit import UnitUnavailableError
