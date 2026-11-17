@@ -18,6 +18,7 @@ import sys
 import time
 
 import pytest
+from waits import SECONDS
 
 ROOT = pathlib.Path(__file__).parent.parent
 
@@ -283,13 +284,13 @@ def test_an_interrupt_and_then_a_stop_still_let_the_mutation_run_clean_up(tmp_pa
     try:
         deadline = time.monotonic() + 60
         while not (project / "started").exists():
-            assert run.poll() is None, run.communicate()[0]
+            assert run.poll() is None, run.communicate(timeout=SECONDS)[0]
             assert time.monotonic() < deadline, "the tests never started"
             time.sleep(0.05)
         assert (project / "rule.py").read_text() == "x = 2\n", "the rule was switched off"
         run.send_signal(signal.SIGINT)
         while not (tmp_path / "cleaning").exists():
-            assert run.poll() is None, run.communicate()[0]
+            assert run.poll() is None, run.communicate(timeout=SECONDS)[0]
             assert time.monotonic() < deadline, "the cleanup never started"
             time.sleep(0.05)
         run.send_signal(signal.SIGTERM)

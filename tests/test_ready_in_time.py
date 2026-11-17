@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from ayla_iot_unofficial import AylaAuthError
 from ayla_iot_unofficial.exc import AylaAuthExpiringError, AylaNotAuthedError
 from test_fglair import FakeDevice
+from waits import within
 
 import heatpump_mcp.service as service_module
 from heatpump_mcp.fglair import LIBRARY_REFUSES_WITHIN, RENEW_AHEAD_SECONDS, FglairUnit
@@ -118,14 +119,14 @@ def _unit(api):
 def _read_with(api, left):
     """A unit read once, as a question does, with the token at `left` seconds."""
     unit = _unit(api)
-    asyncio.run(unit.read())
+    within(unit.read())
     api.left = left
     return unit
 
 
 def _change(unit):
-    asyncio.run(unit.ready())
-    asyncio.run(unit.apply(Change(Setting.TEMPERATURE, 22.0)))
+    within(unit.ready())
+    within(unit.apply(Change(Setting.TEMPERATURE, 22.0)))
 
 
 def test_a_change_is_sent_without_renewing_a_login_the_library_still_accepts():
@@ -147,7 +148,7 @@ def test_a_change_in_the_tokens_last_ten_minutes_still_goes_out():
 def test_a_question_renews_a_login_that_would_run_out_before_its_yes():
     api = LibraryLike()
     unit = _read_with(api, JUST_OUTSIDE)
-    asyncio.run(unit.read())
+    within(unit.read())
     assert api.refreshes == 1
     assert api.left == LIFETIME
 
@@ -158,19 +159,19 @@ def test_the_renewal_ahead_outlasts_a_cached_reading_and_the_question():
 
 def _asked(api, clock):
     service = HeatpumpService(_unit(api), clock=clock, sleep=clock.sleep)
-    question = asyncio.run(service.request(Setting.TEMPERATURE, "22"))
+    question = within(service.request(Setting.TEMPERATURE, "22"))
     return service, question
 
 
 def test_a_yes_soon_after_a_question_is_carried_out_on_a_day_the_cloud_is_slow(monkeypatch):
     monkeypatch.setattr(service_module, "READY_SECONDS", SLOW / 3)
     api, clock = LibraryLike(renewal_takes=SLOW), Clock()
-    asyncio.run(_unit(api).read())
+    within(_unit(api).read())
     api.left = JUST_OUTSIDE  # the token nears the library's window before the question
     service, question = _asked(api, clock)
     api.left -= TOKEN_SECONDS  # the yes comes as late as a question allows
     clock.now += TOKEN_SECONDS - 1
-    answer = asyncio.run(service.confirm(question.token))
+    answer = within(service.confirm(question.token))
     assert isinstance(answer, Done), answer.say
     assert answer.confirmed, answer.say
     assert api.device.calls == [("set_temp", 22.0)]
@@ -181,7 +182,7 @@ def test_a_renewal_at_the_yes_that_misses_its_time_is_said_to_be_not_sent(monkey
     api, clock = LibraryLike(renewal_takes=SLOW), Clock()
     service, question = _asked(api, clock)
     api.left = LIBRARY_REFUSES_WITHIN - 300  # only if the token ran short some other way
-    answer = asyncio.run(service.confirm(question.token))
+    answer = within(service.confirm(question.token))
     assert isinstance(answer, Refused)
     assert answer.say.startswith("I could not reach the heat pump, so nothing changed.")
     assert api.device.calls == []

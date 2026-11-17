@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 import pytest
+from waits import SECONDS, line_within
 
 ROOT = pathlib.Path(__file__).parent.parent
 
@@ -72,13 +73,13 @@ def test_only_one_mutation_run_at_a_time_in_a_checkout(tmp_path, monkeypatch):
         [sys.executable, "-c", HOLD, str(mutate.RUNNING)], stdout=subprocess.PIPE, text=True
     )
     try:
-        assert holder.stdout.readline().strip() == "held"
+        assert line_within(holder.stdout).strip() == "held"
         monkeypatch.setattr(sys, "argv", ["mutate.py"])
         with pytest.raises(SystemExit) as refused:
             mutate.main()
     finally:
         holder.kill()
-        holder.wait()
+        holder.wait(SECONDS)
     assert "already running" in str(refused.value)
     assert mutate.RECOVERY.exists()
     assert (mutate.ROOT / "rule.py").read_text() == "x = 2\n"

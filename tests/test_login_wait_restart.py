@@ -8,7 +8,6 @@ holds that one time and nothing about the login. A login entered after the
 wait began is a new login and is tried at once. No network is touched.
 """
 
-import asyncio
 import os
 import stat
 import time
@@ -17,6 +16,7 @@ from datetime import UTC, datetime
 import pytest
 from test_fglair import FakeDevice
 from test_login_backoff import Clock, Refusing
+from waits import within
 
 from heatpump_mcp.fglair import LOGIN_BACKOFF_LONGEST, LOGIN_BACKOFF_SECONDS, FglairUnit, LoginWait
 from heatpump_mcp.settings import state_folder
@@ -29,7 +29,7 @@ def _unit(api, clock, wait):
 
 def _refused(call):
     with pytest.raises(UnitUnavailableError) as caught:
-        asyncio.run(call())
+        within(call())
     return str(caught.value)
 
 
@@ -88,7 +88,7 @@ def test_a_login_that_works_removes_the_wait_file(tmp_path, login):
     api, unit, wait = _refused_then_restarted(tmp_path, login, clock)
     clock.now += LOGIN_BACKOFF_SECONDS
     api.refuse_login = False
-    asyncio.run(unit.read())
+    within(unit.read())
     assert not wait.exists()
 
 

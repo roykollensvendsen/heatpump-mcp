@@ -8,11 +8,10 @@ goes through the wait after a refused login, so a wrong password is still not
 sent over and over. No network is touched.
 """
 
-import asyncio
-
 import pytest
 from ayla_iot_unofficial import AylaAuthError
 from test_fglair import FakeApi, FakeDevice
+from waits import within
 
 from heatpump_mcp.fglair import LOGIN_BACKOFF_SECONDS, FglairUnit
 from heatpump_mcp.unit import UnitUnavailableError
@@ -45,7 +44,7 @@ class WontRenew(FakeApi):
 def _signed_in_once(api, clock):
     """A unit read once, so the login is in use, and then nearing its end."""
     unit = FglairUnit(api, is_heat_pump=lambda d: isinstance(d, FakeDevice), clock=clock)
-    asyncio.run(unit.read())
+    within(unit.read())
     api.token_expiring_soon = True
     api.tries = 0
     return unit
@@ -53,14 +52,14 @@ def _signed_in_once(api, clock):
 
 def _refused(call):
     with pytest.raises(UnitUnavailableError) as caught:
-        asyncio.run(call())
+        within(call())
     return str(caught.value)
 
 
 def test_a_refused_renewal_is_followed_by_one_full_sign_in():
     api, clock = WontRenew(), Clock()
     unit = _signed_in_once(api, clock)
-    asyncio.run(unit.read())
+    within(unit.read())
     assert (api.refreshes, api.tries) == (1, 1)
     assert not api.token_expiring_soon
 

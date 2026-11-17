@@ -8,13 +8,13 @@ a server with no login at all must still start and say what to set up. Both
 runs start the real command, as the bridge does, from a fresh process.
 """
 
-import asyncio
 import os
 import sys
 import time
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from waits import within
 
 #: Seconds a cold start may take to list the tools, kept well inside the bridge's 15.
 COLD_START_WITHIN = 10.0
@@ -31,7 +31,7 @@ def _listed(args, env=None):
             return {tool.name for tool in (await session.list_tools()).tools}
 
     started = time.monotonic()
-    names = asyncio.run(run())
+    names = within(run())
     return names, time.monotonic() - started
 
 

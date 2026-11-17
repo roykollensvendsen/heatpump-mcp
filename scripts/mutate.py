@@ -33,6 +33,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from typing import TYPE_CHECKING
 
@@ -410,6 +411,11 @@ def measure_all(write: pathlib.Path | None) -> int:
             RECOVERY.write_text(json.dumps({"file": rule["file"], "original": text, "mutated": mutated}))
             path.write_text(mutated)
             standing = (path, text, mutated)
+            # Sent at once, not held until the run ends: in CI the output is a pipe, so a run
+            # that hangs would otherwise leave no word of which rule it hung on.
+            # RULE: a mutation run names each rule before it tests it
+            print(f"testing  {rule['name']}", flush=True)  # noqa: T201
+            started = time.monotonic()
             count, failed = run_suite()
             if not restore(path, text, mutated):
                 lost.append(rule["file"])
@@ -420,7 +426,8 @@ def measure_all(write: pathlib.Path | None) -> int:
             by_its_own = own in failed
             results.append((rule["name"], count, own, by_its_own))
             verdict = "KILLED  " if by_its_own else ("BY LUCK " if count else "SURVIVED")
-            print(f"{verdict} {rule['name']}: {count}")  # noqa: T201
+            took = time.monotonic() - started
+            print(f"{verdict} {rule['name']}: {count} ({took:.0f} s)", flush=True)  # noqa: T201
     finally:
         if standing is not None:
             restore(*standing)

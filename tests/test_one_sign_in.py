@@ -11,6 +11,7 @@ import asyncio
 
 import pytest
 from test_fglair import FakeApi, FakeDevice
+from waits import within
 
 from heatpump_mcp.fglair import FglairUnit
 from heatpump_mcp.unit import UnitUnavailableError
@@ -39,14 +40,14 @@ async def _together(unit):
 
 def test_one_sign_in_at_a_time():
     api = SlowToSignIn()
-    answers = asyncio.run(_together(_unit(api)))
+    answers = within(_together(_unit(api)))
     assert not [a for a in answers if isinstance(a, BaseException)]
     assert api.tries == 1
 
 
 def test_two_questions_at_once_on_a_refused_login_send_it_once():
     api = SlowToSignIn(refuse_login=True)
-    answers = asyncio.run(_together(_unit(api)))
+    answers = within(_together(_unit(api)))
     assert all(isinstance(a, UnitUnavailableError) for a in answers)
     assert all("refused the login" in str(a) for a in answers)
     assert api.tries == 1
@@ -60,7 +61,7 @@ def test_a_change_and_a_status_at_once_sign_in_once(first):
     async def both():
         await asyncio.gather(getattr(unit, first)(), unit.read())
 
-    asyncio.run(both())
+    within(both())
     assert api.tries == 1
 
 
@@ -77,5 +78,5 @@ def test_a_question_given_up_while_signing_in_lets_the_next_one_sign_in():
             await first
         await asyncio.wait_for(unit.read(), timeout=1)
 
-    asyncio.run(given_up_then_asked_again())
+    within(given_up_then_asked_again())
     assert api.tries == 2

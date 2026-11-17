@@ -7,10 +7,9 @@ waits before it signs in again, longer each time, and says why; a login entered
 again is a new login and is tried at once. No network is touched.
 """
 
-import asyncio
-
 import pytest
 from test_fglair import FakeApi, FakeDevice
+from waits import within
 
 from heatpump_mcp.fglair import LOGIN_BACKOFF_LONGEST, LOGIN_BACKOFF_SECONDS, FglairUnit
 from heatpump_mcp.unit import Change, ChangeNotSentError, Setting, UnitUnavailableError
@@ -42,7 +41,7 @@ def _unit(api, clock):
 
 def _refused(call):
     with pytest.raises(UnitUnavailableError) as caught:
-        asyncio.run(call())
+        within(call())
     return str(caught.value)
 
 
@@ -103,9 +102,9 @@ def test_a_change_while_waiting_is_never_sent_and_does_not_sign_in():
     unit = _unit(api, clock)
     _refused(unit.read)
     with pytest.raises(ChangeNotSentError):
-        asyncio.run(unit.ready())
+        within(unit.ready())
     with pytest.raises(ChangeNotSentError):
-        asyncio.run(unit.apply(Change(Setting.TEMPERATURE, 22.0)))
+        within(unit.apply(Change(Setting.TEMPERATURE, 22.0)))
     assert api.tries == 1
     assert api.devices[0].calls == []
 
@@ -116,7 +115,7 @@ def test_a_login_that_works_again_ends_the_wait():
     _refused(unit.read)
     clock.now += LOGIN_BACKOFF_SECONDS
     api.refuse_login = False
-    asyncio.run(unit.read())
+    within(unit.read())
     api.refuse_login = True
     api.token_expired = True
     _refused(unit.read)

@@ -66,3 +66,43 @@ def test_an_empty_rule_table_is_not_a_crash(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["mutate.py"])
     assert mutate.main() == 0
     assert "no rows in scripts/mutations/ yet" in capsys.readouterr().out
+
+
+class _Pipe:
+    """Output that, like a pipe in CI, shows only what has been flushed."""
+
+    def __init__(self):
+        self.held, self.shown = "", ""
+
+    def write(self, text):
+        self.held += text
+        return len(text)
+
+    def flush(self):
+        self.shown, self.held = self.shown + self.held, ""
+
+
+def test_a_mutation_run_names_each_rule_before_it_tests_it(tmp_path, monkeypatch):
+    """The rule's name must be out of the process, not in its buffer, when its tests start.
+
+    In CI the output is a pipe, which Python holds back until it is full. A run that hung on
+    one rule left nothing in the log to say which. Its result line has to get out as well.
+    """
+    mutate = _mutate(tmp_path, monkeypatch)
+    source = tmp_path / "project" / "guard.py"
+    source.write_text("holds = True\n")
+    monkeypatch.setattr(mutate, "RECOVERY", tmp_path / "recovery.json")
+    monkeypatch.setattr(mutate, "check_own_code", lambda: None)
+    rule = {"name": "a guard holds", "file": "guard.py", "find": "^holds", "replace": "holds = False"}
+    monkeypatch.setattr(mutate, "all_rows", lambda: [rule])
+    pipe, seen = _Pipe(), []
+    monkeypatch.setattr(sys, "stdout", pipe)
+
+    def suite():
+        seen.append(pipe.shown)
+        return 1, ["test_a_guard_holds"]
+
+    monkeypatch.setattr(mutate, "run_suite", suite)
+    mutate.measure_all(None)
+    assert "testing  a guard holds\n" in seen[0]
+    assert "KILLED   a guard holds: 1" in pipe.shown

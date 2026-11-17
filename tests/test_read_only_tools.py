@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The tools that only look are marked read-only, and only those (the plugin standard's rule 9)."""
 
-import asyncio
+from waits import within
 
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService
@@ -11,7 +11,7 @@ READ_ONLY = {"heatpump_status"}
 
 
 def _tools():
-    return {t.name: t for t in asyncio.run(build_server(HeatpumpService(SimulatedUnit())).list_tools())}
+    return {t.name: t for t in within(build_server(HeatpumpService(SimulatedUnit())).list_tools())}
 
 
 def test_the_tools_that_only_look_are_marked_read_only_and_no_others():
