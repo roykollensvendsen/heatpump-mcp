@@ -11,6 +11,8 @@ import pathlib
 import subprocess
 import sys
 
+from bounded import SECONDS
+
 ROOT = pathlib.Path(__file__).parent.parent
 
 
@@ -48,14 +50,14 @@ def test_two_mutations_never_share_a_bytecode_cache(tmp_path, monkeypatch):
     mutate = _mutate(tmp_path, monkeypatch)
     monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
     seen = _suite_says(mutate, monkeypatch, "1 passed\n")
-    mutate.run_suite()
+    mutate.run_suite(timeout=SECONDS)
     assert seen["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 def test_a_coloured_failure_line_is_still_attributed(tmp_path, monkeypatch):
     mutate = _mutate(tmp_path, monkeypatch)
     _suite_says(mutate, monkeypatch, "\x1b[31mFAILED\x1b[0m tests/test_x.py::test_y - boom\n1 failed\n")
-    assert mutate.run_suite() == (1, ["test_y"])
+    assert mutate.run_suite(timeout=SECONDS) == (1, ["test_y"])
 
 
 def test_an_empty_rule_table_is_not_a_crash(tmp_path, monkeypatch, capsys):
@@ -106,3 +108,17 @@ def test_a_mutation_run_names_each_rule_before_it_tests_it(tmp_path, monkeypatch
     mutate.measure_all(None)
     assert "testing  a guard holds\n" in seen[0]
     assert "KILLED   a guard holds: 1" in pipe.shown
+
+
+def test_a_real_mutation_run_has_no_time_limit(tmp_path, monkeypatch):
+    """Roy's rule: a mutation run is never capped. Only a test's scratch run passes a bound."""
+    mutate = _mutate(tmp_path, monkeypatch)
+    seen = {}
+
+    def run(command, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, "1 passed\n", "")
+
+    monkeypatch.setattr(mutate.subprocess, "run", run)
+    mutate.run_suite()
+    assert seen["timeout"] is None

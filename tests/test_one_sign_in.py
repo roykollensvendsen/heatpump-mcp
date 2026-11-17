@@ -10,8 +10,8 @@ for the other and uses the login it got. No network is touched.
 import asyncio
 
 import pytest
+from bounded import within
 from test_fglair import FakeApi, FakeDevice
-from waits import within
 
 from heatpump_mcp.fglair import FglairUnit
 from heatpump_mcp.unit import UnitUnavailableError

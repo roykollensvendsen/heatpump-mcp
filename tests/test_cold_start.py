@@ -12,9 +12,9 @@ import os
 import sys
 import time
 
+from bounded import within
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from waits import within
 
 #: Seconds a cold start may take to list the tools, kept well inside the bridge's 15.
 COLD_START_WITHIN = 10.0

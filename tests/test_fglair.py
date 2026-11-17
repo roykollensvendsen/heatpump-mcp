@@ -8,7 +8,7 @@ import pytest
 from ayla_iot_unofficial import AylaAuthError
 from ayla_iot_unofficial.fujitsu_consts import FanSpeed, OpMode
 from ayla_iot_unofficial.fujitsu_hvac import DeviceOffline, SettingNotSupportedError
-from waits import within
+from bounded import within
 
 from heatpump_mcp.fglair import FglairUnit
 from heatpump_mcp.unit import (

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Reading the heat pump: what it says, and how long a reading is kept."""
 
-from waits import within
+from bounded import within
 
 from heatpump_mcp.service import STATUS_CACHE_SECONDS, HeatpumpService
 from heatpump_mcp.simulator import SimulatedUnit

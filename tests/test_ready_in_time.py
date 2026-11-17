@@ -16,8 +16,8 @@ from datetime import datetime, timedelta
 
 from ayla_iot_unofficial import AylaAuthError
 from ayla_iot_unofficial.exc import AylaAuthExpiringError, AylaNotAuthedError
+from bounded import within
 from test_fglair import FakeDevice
-from waits import within
 
 import heatpump_mcp.service as service_module
 from heatpump_mcp.fglair import LIBRARY_REFUSES_WITHIN, RENEW_AHEAD_SECONDS, FglairUnit

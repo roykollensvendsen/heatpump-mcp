@@ -8,8 +8,8 @@ again is a new login and is tried at once. No network is touched.
 """
 
 import pytest
+from bounded import within
 from test_fglair import FakeApi, FakeDevice
-from waits import within
 
 from heatpump_mcp.fglair import LOGIN_BACKOFF_LONGEST, LOGIN_BACKOFF_SECONDS, FglairUnit
 from heatpump_mcp.unit import Change, ChangeNotSentError, Setting, UnitUnavailableError

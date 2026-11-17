@@ -18,7 +18,7 @@ import textwrap
 import time
 
 import pytest
-from waits import SECONDS, line_within
+from bounded import SECONDS, line_within
 
 ROOT = pathlib.Path(__file__).parent.parent
 
@@ -306,7 +306,7 @@ def test_a_stopped_ratchet_still_removes_its_copy_of_main(tmp_path):
     try:
         assert line_within(run.stdout).strip() == "ready"
         run.send_signal(signal.SIGTERM)
-        assert run.wait(60) == 128 + signal.SIGTERM
+        assert run.wait(SECONDS) == 128 + signal.SIGTERM
     finally:
         run.kill()
     assert list(scratch.iterdir()) == []
@@ -395,13 +395,13 @@ def test_a_stopped_ratchet_lets_the_command_it_runs_clean_up_first(tmp_path):
         ]
     )
     try:
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + SECONDS
         while not (tmp_path / "ready").exists():
             assert run.poll() is None, "the command never started"
             assert time.monotonic() < deadline, "the command never started"
             time.sleep(0.05)
         run.send_signal(signal.SIGTERM)
-        assert run.wait(30) == 128 + signal.SIGTERM
+        assert run.wait(SECONDS) == 128 + signal.SIGTERM
     finally:
         run.kill()
         with contextlib.suppress(OSError, ValueError):
@@ -502,13 +502,13 @@ def _killed_while_running(tmp_path):
         [sys.executable, "-c", KILLED_WHILE_RUNNING, str(ROOT / "scripts"), OUTLIVES, str(tmp_path)]
     )
     try:
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + SECONDS
         while not (tmp_path / "ready").exists():
             assert run.poll() is None, "the command never started"
             assert time.monotonic() < deadline, "the command never started"
             time.sleep(0.05)
         run.kill()
-        run.wait(60)
+        run.wait(SECONDS)
         while not (tmp_path / "finished").exists() and time.monotonic() < deadline:
             time.sleep(0.1)
     finally:

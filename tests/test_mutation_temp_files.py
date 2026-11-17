@@ -18,7 +18,7 @@ import sys
 import time
 
 import pytest
-from waits import SECONDS
+from bounded import SECONDS, run_bounded
 
 ROOT = pathlib.Path(__file__).parent.parent
 
@@ -49,7 +49,7 @@ def _mutate(tmp_path, monkeypatch):
 
 def test_a_suite_run_leaves_no_temporary_files_behind(tmp_path, monkeypatch):
     mutate = _mutate(tmp_path, monkeypatch)
-    failed, _ = mutate.run_suite()
+    failed, _ = mutate.run_suite(timeout=SECONDS)
     assert failed == 0
     assert list(mutate.MUTATE_TMP.glob("run-*")) == []
 
@@ -73,7 +73,7 @@ def test_a_switched_off_cleanup_leaves_nothing_in_the_computer_s_temporary_folde
     outer = tmp_path / "outer"
     outer.mkdir()
     monkeypatch.setenv("TMPDIR", str(outer))
-    failed, _ = mutate.run_suite()
+    failed, _ = mutate.run_suite(timeout=SECONDS)
     assert failed == 0
     assert list(outer.iterdir()) == []
     assert not mutate.MUTATE_TMP.exists()
@@ -81,7 +81,7 @@ def test_a_switched_off_cleanup_leaves_nothing_in_the_computer_s_temporary_folde
 
 def test_the_mutation_run_s_own_folder_is_removed_once_it_is_empty(tmp_path, monkeypatch):
     mutate = _mutate(tmp_path, monkeypatch)
-    mutate.run_suite()
+    mutate.run_suite(timeout=SECONDS)
     assert not mutate.MUTATE_TMP.exists()
 
 
@@ -95,7 +95,7 @@ def test_removing_a_run_s_files_never_changes_a_folder_it_links_to(tmp_path, mon
     (mutate.ROOT / "tests" / "test_links_out.py").write_text(
         f"def test_it_links_out(tmp_path):\n    (tmp_path / 'link').symlink_to({str(outside)!r})\n"
     )
-    failed, _ = mutate.run_suite()
+    failed, _ = mutate.run_suite(timeout=SECONDS)
     assert failed == 0
     assert (outside.stat().st_mode & 0o777, (outside / "kept.txt").exists()) == (0o755, True)
 
@@ -135,7 +135,7 @@ spec.loader.exec_module(mutate)
 mutate.ROOT = pathlib.Path(sys.argv[2])
 mutate.MUTATE_TMP = pathlib.Path(sys.argv[3])
 mutate.stop_cleanly()
-mutate.run_suite()
+mutate.run_suite(timeout=300)  # the test's bound, as SECONDS in bounded.py
 """
 
 
@@ -155,13 +155,13 @@ def test_a_stopped_mutation_run_still_cleans_up(tmp_path):
         [sys.executable, str(script), str(ROOT / "scripts/mutate.py"), str(project), str(scratch)]
     )
     try:
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + SECONDS
         while not (scratch.is_dir() and any(scratch.iterdir())):
             assert time.monotonic() < deadline, "the run never made its folder"
             time.sleep(0.1)
         time.sleep(0.5)  # let pytest start inside the run's folder
         run.send_signal(signal.SIGTERM)
-        assert run.wait(60) == 128 + signal.SIGTERM
+        assert run.wait(SECONDS) == 128 + signal.SIGTERM
     finally:
         run.kill()
     assert not scratch.exists() or list(scratch.iterdir()) == []
@@ -215,13 +215,13 @@ def interrupt_then_stop(script, here):
     run = subprocess.Popen([sys.executable, "-c", INTERRUPTED_THEN_STOPPED, str(script), str(here)])
     try:
         for step, sent in (("ready", signal.SIGINT), ("cleaning", signal.SIGTERM)):
-            deadline = time.monotonic() + 60
+            deadline = time.monotonic() + SECONDS
             while not (here / step).exists():
                 assert run.poll() is None, f"never {step}"
                 assert time.monotonic() < deadline, f"never {step}"
                 time.sleep(0.05)
             run.send_signal(sent)
-        run.wait(60)
+        run.wait(SECONDS)
     finally:
         run.kill()
     return (here / "cleaned").exists()
@@ -282,7 +282,7 @@ def test_an_interrupt_and_then_a_stop_still_let_the_mutation_run_clean_up(tmp_pa
         text=True,
     )
     try:
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + SECONDS
         while not (project / "started").exists():
             assert run.poll() is None, run.communicate(timeout=SECONDS)[0]
             assert time.monotonic() < deadline, "the tests never started"
@@ -294,7 +294,7 @@ def test_an_interrupt_and_then_a_stop_still_let_the_mutation_run_clean_up(tmp_pa
             assert time.monotonic() < deadline, "the cleanup never started"
             time.sleep(0.05)
         run.send_signal(signal.SIGTERM)
-        out, _ = run.communicate(timeout=60)
+        out, _ = run.communicate(timeout=SECONDS)
     finally:
         run.kill()
     assert (project / "rule.py").read_text() == "x = 1\n", out
@@ -323,13 +323,11 @@ def test_a_runner_left_mutated_starts_again_from_its_repaired_file(tmp_path):
         json.dumps({"file": "scripts/mutate.py", "original": original, "mutated": mutated})
     )
     (tmp_path / "tmp").mkdir()
-    ran = subprocess.run(
+    ran = run_bounded(
         [sys.executable, str(runner)],
         capture_output=True,
         text=True,
-        check=False,
         env={**os.environ, "TMPDIR": str(tmp_path / "tmp")},
-        timeout=60,
     )
     assert "repaired scripts/mutate.py" in ran.stdout, ran.stdout + ran.stderr
     assert runner.read_text() == original

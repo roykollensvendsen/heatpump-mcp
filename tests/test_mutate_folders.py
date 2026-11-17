@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 import pytest
-from waits import SECONDS, line_within
+from bounded import SECONDS, line_within
 
 ROOT = pathlib.Path(__file__).parent.parent
 

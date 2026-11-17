@@ -14,9 +14,9 @@ import time
 from datetime import UTC, datetime
 
 import pytest
+from bounded import within
 from test_fglair import FakeDevice
 from test_login_backoff import Clock, Refusing
-from waits import within
 
 from heatpump_mcp.fglair import LOGIN_BACKOFF_LONGEST, LOGIN_BACKOFF_SECONDS, FglairUnit, LoginWait
 from heatpump_mcp.settings import state_folder
