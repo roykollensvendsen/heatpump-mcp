@@ -92,3 +92,32 @@ def test_the_hook_form_reads_a_message_file_and_drops_comments(tmp_path, monkeyp
     path.write_text("feat: Add a thing\n\nReviewed-by: Someone <s@example.invalid>\n")
     assert no_session_links.main() == 1
     assert "Reviewed-by" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("ending", "refused"),
+    [
+        ("Reviewed-by: Someone <s@example.invalid>\n(cherry picked from commit 0123abc)", True),
+        ("Reviewed-by: Someone\n  <s@example.invalid>, folded onto a second line", True),
+        ("Co-Authored-By: A <a@example.invalid>\n(cherry picked from commit 0123abc)", False),
+    ],
+    ids=["after a cherry-pick note", "folded", "credit and a cherry-pick note"],
+)
+def test_a_trailer_block_is_read_as_git_reads_it(ending, refused):
+    """Git keeps a cherry-pick note and a folded line inside the trailer block, and so does this."""
+    said = no_session_links.offence(f"fix: Mend it\n\nBody.\n\n{ending}\n")
+    assert bool(said) is refused
+
+
+def test_the_hook_form_drops_comments_by_the_clone_s_own_comment_character(tmp_path, monkeypatch):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, timeout=SECONDS)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "core.commentChar", ";"], check=True, timeout=SECONDS
+    )
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "COMMIT_EDITMSG"
+    path.write_text(
+        "feat: Add a thing\n\n; See https://claude.ai/code/" + "session_01Ab, a comment git drops\n"
+    )
+    monkeypatch.setattr(sys, "argv", ["no_session_links.py", "--file", str(path)])
+    assert no_session_links.main() == 0
