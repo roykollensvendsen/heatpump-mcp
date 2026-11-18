@@ -219,7 +219,14 @@ noun phrase like "A new check". The linter has a setting for this, and it fires 
 word while the same configuration requires a capital, so it can never fire;
 `scripts/imperative.py` is what refuses it.
 
-A `commit-msg` hook runs both while you are writing the message, rather than
+A message never links to a Claude session, whether as a `Claude-Session:`
+line or as a `claude.ai/code/session_` address. Such a link opens only in one
+person's account, so to everyone else reading this history it says nothing.
+The only trailers a commit may carry are `Co-Authored-By` and
+`Signed-off-by`. Any other note belongs in the pull request's text.
+`scripts/no_session_links.py` is what refuses them.
+
+A `commit-msg` hook runs these checks while you are writing the message, rather than
 in CI afterwards. Turn it on once per clone:
 
 <!-- not run: it is already on in this clone -->
