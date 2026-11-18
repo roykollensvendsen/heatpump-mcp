@@ -64,6 +64,8 @@ jobs:
       # committed's own imperative rule flags nothing, so this is what does.
       - name: Subjects in the imperative
         run: python scripts/imperative.py ${{ steps.range.outputs.range }}
+      - name: No session link, and no trailer but credit
+        run: python scripts/no_session_links.py ${{ steps.range.outputs.range }}
 
   # A key, token or password anywhere in the history, not only in this change:
   # the repository may be made public, and a secret deleted later is still in
