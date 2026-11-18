@@ -25,6 +25,8 @@ import sys
 SESSION = re.compile(r"claude-session\s*:|claude\.ai/code/session_", re.IGNORECASE)
 #: A line shaped like a git trailer: a key of letters, digits and hyphens, a colon, a value.
 TRAILER = re.compile(r"^([A-Za-z][A-Za-z0-9-]*):\s+\S")
+#: The line `git cherry-pick -x` adds, inside the trailer block.
+CHERRY_PICKED = re.compile(r"^\(cherry picked from commit [0-9a-f]+\)$")
 #: The trailers a commit may carry, compared without regard to case.
 ALLOWED_TRAILERS = frozenset({"co-authored-by", "signed-off-by"})
 #: `--file PATH` takes exactly two arguments.
@@ -34,11 +36,21 @@ MIN_PARAGRAPHS = 2
 
 
 def trailers(message: str) -> list[str]:
-    """The keys of the message's trailers: its last paragraph, when every line of it is one."""
+    """The keys of the message's trailers: its last paragraph, when every line of it is one.
+
+    A folded line and a cherry-pick note are part of the block, as git reads it.
+    """
     paragraphs = [p for p in re.split(r"\n\s*\n", message.strip()) if p.strip()]
     if len(paragraphs) < MIN_PARAGRAPHS:
         return []  # the subject alone is never a trailer block
-    lines = [line for line in paragraphs[-1].splitlines() if line.strip()]
+    # As git reads a block: a folded line continues the one above it, and the note
+    # `git cherry-pick -x` adds is part of the block, never a reason to stop reading it.
+    # RULE: a trailer block is read as git reads it
+    lines = [
+        line
+        for line in paragraphs[-1].splitlines()
+        if line.strip() and not line[0].isspace() and not CHERRY_PICKED.match(line)
+    ]
     matches = [TRAILER.match(line) for line in lines]
     return [m.group(1) for m in matches if m] if all(matches) else []
 
@@ -81,12 +93,28 @@ def offenders(commit_range: str, cwd: str | None = None) -> list[tuple[str, str,
     return found
 
 
+def comment_character() -> str:
+    """The character that starts a comment line in this clone's message file: git's own setting.
+
+    `auto` lets git pick a character the message doesn't use, which a hook can't know, so `#` is
+    used for it. A wrong character can only refuse a message, never let one through.
+    """
+    asked = subprocess.run(
+        ["git", "config", "core.commentChar"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    return asked if asked and asked != "auto" else "#"
+
+
 def main() -> int:
     """Check a range of commits, or one message file; exit 1 on any offence."""
     args = sys.argv[1:]
     if len(args) == FILE_ARGS and args[0] == "--file":
         with pathlib.Path(args[1]).open(encoding="utf-8") as f:
-            message = "\n".join(line for line in f.read().splitlines() if not line.startswith("#"))
+            comment = comment_character()
+            message = "\n".join(line for line in f.read().splitlines() if not line.startswith(comment))
         reason = offence(message)
         if reason:
             sys.stderr.write(f"The commit message {reason}.\n")
