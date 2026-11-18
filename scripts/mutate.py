@@ -331,8 +331,12 @@ def run_suite(timeout: float | None = None) -> tuple[int, list[str]]:
     # RULE: a coloured failure line is still attributed
     plain = ANSI.sub("", r.stdout)
     m = re.search(r"(\d+) (?:failed|error)", plain)
-    failed = re.findall(r"^FAILED (\S+)", plain, re.MULTILINE)
-    return int(m.group(1)) if m else 0, [f.split("::")[-1].split("[")[0] for f in failed]
+    failed = [f.split("::")[-1].split("[")[0] for f in re.findall(r"^FAILED (\S+)", plain, re.MULTILINE)]
+    # A test whose setup broke went red without testing anything: it is named, never a kill.
+    # RULE: a test that errors is named as an error
+    errored = re.findall(r"^ERROR (\S+)", plain, re.MULTILINE)
+    failed += [f"{e.split('::')[-1].split('[')[0]} (error)" for e in errored]
+    return int(m.group(1)) if m else 0, failed
 
 
 def prepare(*, repair_only: bool = False) -> bool:
@@ -388,6 +392,15 @@ def main() -> int:
         return measure_all(args.write) if prepare(repair_only=args.repair_only) else 0
 
 
+def say_result(name: str, count: int, failed: list[str], *, by_its_own: bool, took: float) -> None:
+    """Print one rule's verdict at once, and which tests went red when its own did not."""
+    verdict = "KILLED  " if by_its_own else ("BY LUCK " if count else "SURVIVED")
+    # A kill that can flip between runs has to say what flipped it.
+    # RULE: a kill by another test names the tests that went red
+    red = f", red: {', '.join(failed)}" if count and not by_its_own else ""
+    print(f"{verdict} {name}: {count}{red} ({took:.0f} s)", flush=True)  # noqa: T201
+
+
 def measure_all(write: pathlib.Path | None) -> int:
     """Switch every rule off in turn, run the tests each time, restore the tree, and report."""
     # RULE: an empty rule table is not a crash
@@ -431,9 +444,7 @@ def measure_all(write: pathlib.Path | None) -> int:
             own = test_name_for(rule["name"])
             by_its_own = own in failed
             results.append((rule["name"], count, own, by_its_own))
-            verdict = "KILLED  " if by_its_own else ("BY LUCK " if count else "SURVIVED")
-            took = time.monotonic() - started
-            print(f"{verdict} {rule['name']}: {count} ({took:.0f} s)", flush=True)  # noqa: T201
+            say_result(rule["name"], count, failed, by_its_own=by_its_own, took=time.monotonic() - started)
     finally:
         if standing is not None:
             restore(*standing)

@@ -60,6 +60,13 @@ def test_a_coloured_failure_line_is_still_attributed(tmp_path, monkeypatch):
     assert mutate.run_suite(timeout=SECONDS) == (1, ["test_y"])
 
 
+def test_a_test_that_errors_is_named_as_an_error(tmp_path, monkeypatch):
+    """A test whose setup broke went red without testing anything, so it is told apart."""
+    mutate = _mutate(tmp_path, monkeypatch)
+    _suite_says(mutate, monkeypatch, "ERROR tests/test_x.py::test_y - OSError\n1 error\n")
+    assert mutate.run_suite(timeout=SECONDS) == (1, ["test_y (error)"])
+
+
 def test_an_empty_rule_table_is_not_a_crash(tmp_path, monkeypatch, capsys):
     mutate = _mutate(tmp_path, monkeypatch)
     monkeypatch.setattr(mutate, "stop_cleanly", lambda: None)
@@ -122,3 +129,18 @@ def test_a_real_mutation_run_has_no_time_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(mutate.subprocess, "run", run)
     mutate.run_suite()
     assert seen["timeout"] is None
+
+
+def test_a_kill_by_another_test_names_the_tests_that_went_red(tmp_path, monkeypatch, capsys):
+    """A rule caught by a neighbour can flip between runs, so the run says which tests it was."""
+    mutate = _mutate(tmp_path, monkeypatch)
+    source = tmp_path / "project" / "guard.py"
+    source.write_text("holds = True\n")
+    monkeypatch.setattr(mutate, "RECOVERY", tmp_path / "recovery.json")
+    monkeypatch.setattr(mutate, "check_own_code", lambda: None)
+    rule = {"name": "a guard holds", "file": "guard.py", "find": "^holds", "replace": "holds = False"}
+    monkeypatch.setattr(mutate, "all_rows", lambda: [rule])
+    monkeypatch.setattr(mutate, "run_suite", lambda: (2, ["test_a_neighbour", "test_another (error)"]))
+    mutate.measure_all(None)
+    said = capsys.readouterr().out
+    assert "BY LUCK  a guard holds: 2, red: test_a_neighbour, test_another (error) (" in said
