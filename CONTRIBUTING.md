@@ -112,6 +112,17 @@ exemptions, each with a reason and the owner's approval; it has none.
    turn the rule off with `uv run python scripts/mutate.py`, watch a named test
    go red, and keep its row under `scripts/mutations/`.
 
+   A pull request shows this itself. The `red-first` check runs the tests it
+   adds or changes on the code before it, with only its changes to `tests/`
+   applied. Each must fail there and pass on the branch. A test that pins
+   behaviour that already exists is excused by a line of its own in the pull
+   request's text, for the reviewer to weigh:
+
+   <!-- not run: a line for a pull request's text, not a command -->
+   ```
+   Red-first: existing behaviour - test_name
+   ```
+
    A rule is a line marked `# RULE: what it says` in the source. Every one needs
    a row, in a file of its own under `scripts/mutations/` (its
    [README](scripts/mutations/README.md) says where), and a test whose name is the rule's own
