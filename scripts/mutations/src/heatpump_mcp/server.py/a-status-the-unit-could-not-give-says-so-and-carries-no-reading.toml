@@ -1,0 +1,5 @@
+[[rule]]
+name = "a status the unit could not give says so and carries no reading"
+file = "src/heatpump_mcp/server.py"
+find = '^\s*return \{"success": False, "say": status\.say, "unit": None\}$'
+replace = 'return {"success": True, "say": status.say, "unit": None}'

@@ -65,6 +65,7 @@ def build_server(service: HeatpumpService, *, simulated: bool = False) -> MCPSer
     async def heatpump_status() -> dict[str, Any]:
         status = await service.status()
         if status.reading is None:
+            # RULE: a status the unit could not give says so and carries no reading
             return {"success": False, "say": status.say, "unit": None}
         return {"success": True, "say": status.say, "unit": asdict(status.reading)}
 

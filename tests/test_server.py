@@ -8,6 +8,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from heatpump_mcp.server import build_server
 from heatpump_mcp.service import HeatpumpService
 from heatpump_mcp.simulator import SimulatedUnit
+from heatpump_mcp.unit import UnitUnavailableError
 
 
 def _call(server, name, **arguments):
@@ -95,3 +96,15 @@ def test_the_value_input_says_which_forms_it_takes():
     said = _tools()["heatpump_set_request"].input_schema["properties"]["value"]["description"]
     for form in ("on", "off", "heat", "21.5", "21,5", "quiet"):
         assert form in said
+
+
+class _Unreadable(SimulatedUnit):
+    async def read(self):
+        raise UnitUnavailableError
+
+
+def test_a_status_the_unit_could_not_give_says_so_and_carries_no_reading():
+    answer = _call(build_server(HeatpumpService(_Unreadable())), "heatpump_status")
+    assert answer["success"] is False
+    assert answer["unit"] is None
+    assert answer["say"]

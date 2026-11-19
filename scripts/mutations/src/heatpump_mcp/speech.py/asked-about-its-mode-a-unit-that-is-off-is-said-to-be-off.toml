@@ -1,0 +1,5 @@
+[[rule]]
+name = "asked about its mode a unit that is off is said to be off"
+file = "src/heatpump_mcp/speech.py"
+find = '^\s*return "The heat pump", "off"$'
+replace = 'return "The heat pump", "on"'

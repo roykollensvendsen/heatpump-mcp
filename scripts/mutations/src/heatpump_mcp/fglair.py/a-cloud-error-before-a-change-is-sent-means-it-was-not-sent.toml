@@ -1,0 +1,6 @@
+[[rule]]
+name = "a cloud error before a change is sent means it was not sent"
+file = "src/heatpump_mcp/fglair.py"
+find = '^\s*raise ChangeNotSentError from None$'
+replace = 'raise UnitUnavailableError from None'
+occurrence = 2

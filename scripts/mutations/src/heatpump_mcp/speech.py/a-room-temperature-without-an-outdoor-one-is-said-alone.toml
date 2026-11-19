@@ -1,0 +1,5 @@
+[[rule]]
+name = "a room temperature without an outdoor one is said alone"
+file = "src/heatpump_mcp/speech.py"
+find = '^\s*parts\.append\(f"The room is \{degrees\(reading\.room_temp\)\}\."\)$'
+replace = 'pass'

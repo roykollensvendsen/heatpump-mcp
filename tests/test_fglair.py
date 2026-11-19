@@ -307,3 +307,35 @@ def test_without_a_login_getting_ready_says_what_to_set_up(tmp_path):
     with pytest.raises(ChangeNotSentError, match="not set up"):
         within(unit.ready())
     assert builds.apis == []
+
+
+class _CloudFailsWhileReading(FakeDevice):
+    async def async_update(self):
+        raise aiohttp.ClientError
+
+
+class _CloudFailsWhileFinding(FakeApi):
+    async def async_get_devices(self):
+        raise aiohttp.ClientError
+
+
+def test_a_cloud_error_while_reading_means_the_unit_cannot_be_read():
+    with pytest.raises(UnitUnavailableError):
+        _read(_unit(FakeApi(_CloudFailsWhileReading())))
+
+
+def test_a_cloud_error_while_getting_ready_means_nothing_was_sent():
+    with pytest.raises(ChangeNotSentError):
+        within(_unit(_CloudFailsWhileFinding()).ready())
+
+
+def test_a_cloud_error_before_a_change_is_sent_means_it_was_not_sent():
+    with pytest.raises(ChangeNotSentError):
+        within(_unit(_CloudFailsWhileFinding()).apply(Change(Setting.FAN, Fan.LOW)))
+
+
+def test_a_change_whose_value_does_not_fit_its_setting_is_never_sent():
+    device = FakeDevice()
+    with pytest.raises(ChangeNotSupportedError):
+        within(_unit(FakeApi(device)).apply(Change(Setting.MODE, 22.5)))
+    assert device.calls == []
