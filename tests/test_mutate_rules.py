@@ -67,6 +67,19 @@ def test_a_test_that_errors_is_named_as_an_error(tmp_path, monkeypatch):
     assert mutate.run_suite(timeout=SECONDS) == (1, ["test_y (error)"])
 
 
+def test_the_red_count_adds_up_failures_and_errors(tmp_path, monkeypatch):
+    """Pytest's last line counts failures and errors apart; the count is both, as the names are."""
+    mutate = _mutate(tmp_path, monkeypatch)
+    said = (
+        "FAILED tests/test_x.py::test_a - assert 9 failed\n"
+        "ERROR tests/test_x.py::test_b - OSError\n"
+        "ERROR tests/test_x.py::test_c - OSError\n"
+        "1 failed, 3 passed, 2 errors in 0.12s\n"
+    )
+    _suite_says(mutate, monkeypatch, said)
+    assert mutate.run_suite(timeout=SECONDS) == (3, ["test_a", "test_b (error)", "test_c (error)"])
+
+
 def test_an_empty_rule_table_is_not_a_crash(tmp_path, monkeypatch, capsys):
     mutate = _mutate(tmp_path, monkeypatch)
     monkeypatch.setattr(mutate, "stop_cleanly", lambda: None)

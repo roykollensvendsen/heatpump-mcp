@@ -1,0 +1,5 @@
+[[rule]]
+name = "with a comment character git picks itself the comment lines are judged too"
+file = "scripts/no_session_links.py"
+find = '^\s*reason = reason or offence\(text\)$'
+replace = 'pass'

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a last paragraph with credit in it is judged line by line"
+file = "scripts/no_session_links.py"
+find = '^\s*has_git_s_own = credit or any\('
+replace = 'has_git_s_own = False'
