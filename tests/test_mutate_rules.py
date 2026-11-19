@@ -131,7 +131,7 @@ def test_a_mutation_run_names_each_rule_before_it_tests_it(tmp_path, monkeypatch
 
 
 def test_a_real_mutation_run_has_no_time_limit(tmp_path, monkeypatch):
-    """Roy's rule: a mutation run is never capped. Only a test's scratch run passes a bound."""
+    """The owner's rule: a mutation run is never capped. Only a test's scratch run passes a bound."""
     mutate = _mutate(tmp_path, monkeypatch)
     seen = {}
 
