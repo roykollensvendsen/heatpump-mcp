@@ -11,6 +11,6 @@
 #     [[exempt]]
 #     measure = "complexity"
 #     reason = "the tool table is one long match on the tool's name"
-#     approved = "Roy, 2026-11-11, in pull request #42"
+#     approved = "the owner, 2026-11-11, in pull request #42"
 #
 # There are no exemptions.
