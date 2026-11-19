@@ -36,9 +36,10 @@ MIN_PARAGRAPHS = 2
 
 
 def trailers(message: str) -> list[str]:
-    """The keys of the message's trailers: its last paragraph, when every line of it is one.
+    """The keys of the trailer-shaped lines in the message's last paragraph, when it is a trailer block.
 
-    A folded line and a cherry-pick note are part of the block, as git reads it.
+    It is one when every line of it is a trailer, or when it holds credit or a cherry-pick
+    note, as git reads it. A folded line and a cherry-pick note are part of the block.
     """
     paragraphs = [p for p in re.split(r"\n\s*\n", message.strip()) if p.strip()]
     if len(paragraphs) < MIN_PARAGRAPHS:
@@ -52,7 +53,14 @@ def trailers(message: str) -> list[str]:
         if line.strip() and not line[0].isspace() and not CHERRY_PICKED.match(line)
     ]
     matches = [TRAILER.match(line) for line in lines]
-    return [m.group(1) for m in matches if m] if all(matches) else []
+    keys = [m.group(1) for m in matches if m]
+    # Git takes a paragraph with one of its own trailers in it as a block, though a line of it
+    # is free text, and keeps every trailer there. So such a paragraph is judged key by key.
+    # A paragraph of prose alone, a colon or not, is never a block.
+    credit = any(key.lower() in ALLOWED_TRAILERS for key in keys)
+    # RULE: a last paragraph with credit in it is judged line by line
+    has_git_s_own = credit or any(CHERRY_PICKED.match(line) for line in paragraphs[-1].splitlines())
+    return keys if all(matches) or has_git_s_own else []
 
 
 def offence(message: str) -> str | None:
@@ -93,19 +101,24 @@ def offenders(commit_range: str, cwd: str | None = None) -> list[tuple[str, str,
     return found
 
 
-def comment_character() -> str:
-    """The character that starts a comment line in this clone's message file: git's own setting.
+def comment_character() -> str | None:
+    """The character that starts a comment line in this clone's message file, or None for `auto`.
 
-    `auto` lets git pick a character the message doesn't use, which a hook can't know, so `#` is
-    used for it. A wrong character can only refuse a message, never let one through.
+    `auto` lets git pick a character the message doesn't use, which a hook can't know: git may
+    then keep the `#` lines. So under `auto` the comment lines are judged as well. The hook is a
+    convenience. A message `git commit -m` writes keeps its `#` lines and the hook still drops
+    them, so continuous integration, which reads the commits as they landed, is the gate.
     """
     asked = subprocess.run(
         ["git", "config", "core.commentChar"],  # noqa: S607
         capture_output=True,
         text=True,
         check=False,
+        timeout=60,
     ).stdout.strip()
-    return asked if asked and asked != "auto" else "#"
+    if asked == "auto":
+        return None
+    return asked or "#"
 
 
 def main() -> int:
@@ -113,9 +126,14 @@ def main() -> int:
     args = sys.argv[1:]
     if len(args) == FILE_ARGS and args[0] == "--file":
         with pathlib.Path(args[1]).open(encoding="utf-8") as f:
-            comment = comment_character()
-            message = "\n".join(line for line in f.read().splitlines() if not line.startswith(comment))
+            text = f.read()
+        comment = comment_character()
+        message = "\n".join(line for line in text.splitlines() if not line.startswith(comment or "#"))
         reason = offence(message)
+        # Refusing is the safe side: with a character git picks itself, a `#` line may land.
+        # RULE: with a comment character git picks itself the comment lines are judged too
+        if comment is None:
+            reason = reason or offence(text)
         if reason:
             sys.stderr.write(f"The commit message {reason}.\n")
             return 1

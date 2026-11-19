@@ -1,0 +1,5 @@
+[[rule]]
+name = "the red count adds up failures and errors"
+file = "scripts/mutate.py"
+find = '^\s*count = sum\(int\(n\) for n in re\.findall'
+replace = 'count = next((int(n) for n in re.findall(r"(\d+) (?:failed|errors?)\b", summary)), 0)'

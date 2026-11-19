@@ -109,6 +109,27 @@ def test_a_trailer_block_is_read_as_git_reads_it(ending, refused):
     assert bool(said) is refused
 
 
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "Signed-off-by: A <a@example.invalid>\nReviewed-by: B <b@example.invalid>\nand a line of free text",
+        "Co-Authored-By: A <a@example.invalid>\nNote: left for the reviewer\nand a line of free text",
+        "Reviewed-by: B <b@example.invalid>\nand a line of free text\n(cherry picked from commit 0123abc)",
+    ],
+    ids=["signed-off-by, then free text", "co-authored-by, then free text", "a cherry-pick note"],
+)
+def test_a_last_paragraph_with_credit_in_it_is_judged_line_by_line(ending):
+    """Git reads such a paragraph as a trailer block though one line is free text, so every key is judged."""
+    said = no_session_links.offence(f"fix: Mend it\n\nBody.\n\n{ending}\n")
+    assert said
+    assert ("Reviewed-by" in said) or ("Note" in said)
+
+
+def test_a_lone_trailer_shaped_line_at_the_end_stays_refused():
+    """Existing behaviour, kept on purpose: a last paragraph that is all trailers is a trailer block."""
+    assert "Note" in no_session_links.offence("fix: Mend it\n\nBody.\n\nNote: left for the reviewer\n")
+
+
 def test_the_hook_form_drops_comments_by_the_clone_s_own_comment_character(tmp_path, monkeypatch):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, timeout=SECONDS)
     subprocess.run(
@@ -120,4 +141,19 @@ def test_the_hook_form_drops_comments_by_the_clone_s_own_comment_character(tmp_p
         "feat: Add a thing\n\n; See https://claude.ai/code/" + "session_01Ab, a comment git drops\n"
     )
     monkeypatch.setattr(sys, "argv", ["no_session_links.py", "--file", str(path)])
+    assert no_session_links.main() == 0
+
+
+def test_with_a_comment_character_git_picks_itself_the_comment_lines_are_judged_too(tmp_path, monkeypatch):
+    """Under `auto` git may keep the `#` lines, so the hook can't drop them unread."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, timeout=SECONDS)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "core.commentChar", "auto"], check=True, timeout=SECONDS
+    )
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "COMMIT_EDITMSG"
+    monkeypatch.setattr(sys, "argv", ["no_session_links.py", "--file", str(path)])
+    path.write_text(f"feat: Add a thing\n\n# {SESSION_LINE}\n")
+    assert no_session_links.main() == 1
+    path.write_text("feat: Add a thing\n\nBody.\n\n# Please enter the commit message for your changes.\n#\n")
     assert no_session_links.main() == 0

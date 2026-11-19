@@ -330,13 +330,17 @@ def run_suite(timeout: float | None = None) -> tuple[int, list[str]]:
     # turns colour back on, which would otherwise make every kill unattributable.
     # RULE: a coloured failure line is still attributed
     plain = ANSI.sub("", r.stdout)
-    m = re.search(r"(\d+) (?:failed|error)", plain)
+    # Pytest's last line counts failures and errors apart, and a failure's own message may
+    # hold a number of its own, so only that line is read, and both counts are added up.
+    summary = plain.strip().splitlines()[-1] if plain.strip() else ""
+    # RULE: the red count adds up failures and errors
+    count = sum(int(n) for n in re.findall(r"(\d+) (?:failed|errors?)\b", summary))
     failed = [f.split("::")[-1].split("[")[0] for f in re.findall(r"^FAILED (\S+)", plain, re.MULTILINE)]
     # A test whose setup broke went red without testing anything: it is named, never a kill.
     # RULE: a test that errors is named as an error
     errored = re.findall(r"^ERROR (\S+)", plain, re.MULTILINE)
     failed += [f"{e.split('::')[-1].split('[')[0]} (error)" for e in errored]
-    return int(m.group(1)) if m else 0, failed
+    return count, failed
 
 
 def prepare(*, repair_only: bool = False) -> bool:
