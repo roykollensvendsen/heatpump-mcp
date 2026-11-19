@@ -109,13 +109,18 @@ def comment_character() -> str | None:
     convenience. A message `git commit -m` writes keeps its `#` lines and the hook still drops
     them, so continuous integration, which reads the commits as they landed, is the gate.
     """
-    asked = subprocess.run(
-        ["git", "config", "core.commentChar"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    ).stdout.strip()
+    try:
+        asked = subprocess.run(
+            ["git", "config", "core.commentChar"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        ).stdout.strip()
+    except subprocess.TimeoutExpired:
+        # RULE: a hung git config is read as auto and said
+        sys.stderr.write("git config core.commentChar hung for 60 s; comment lines are judged too.\n")
+        return None
     if asked == "auto":
         return None
     return asked or "#"

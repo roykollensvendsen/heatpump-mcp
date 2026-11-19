@@ -1,0 +1,5 @@
+[[rule]]
+name = "a hung git config is read as auto and said"
+file = "scripts/no_session_links.py"
+find = '^\s*sys\.stderr\.write\("git config core\.commentChar hung for 60 s'
+replace = 'raise'
