@@ -1,0 +1,5 @@
+[[rule]]
+name = "a cloud error while getting ready means nothing was sent"
+file = "src/heatpump_mcp/fglair.py"
+find = '^\s*raise ChangeNotSentError from None$'
+replace = 'raise UnitUnavailableError from None'

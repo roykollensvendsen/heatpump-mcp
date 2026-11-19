@@ -1,0 +1,5 @@
+[[rule]]
+name = "a set temperature that cannot be read is said so"
+file = "src/heatpump_mcp/speech.py"
+find = '^\s*return "The heat pump", "set to a temperature I cannot read"$'
+replace = 'return "The heat pump", "set to 0 degrees"'

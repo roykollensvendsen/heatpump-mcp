@@ -44,6 +44,7 @@ def describe(reading: Reading) -> str:
     if not reading.on:
         first = "The heat pump is off."
     elif reading.mode is None:
+        # RULE: a unit on in a mode that cannot be read is only said to be on
         first = "The heat pump is on."
     else:
         target = degrees(reading.set_temp) if reading.set_temp is not None else "an unknown temperature"
@@ -54,6 +55,7 @@ def describe(reading: Reading) -> str:
             f"The room is {degrees(reading.room_temp)}, and it is {degrees(reading.outdoor_temp)} outside."
         )
     elif reading.room_temp is not None:
+        # RULE: a room temperature without an outdoor one is said alone
         parts.append(f"The room is {degrees(reading.room_temp)}.")
     if reading.on and reading.fan is not None:
         parts.append(f"The fan is on {reading.fan}.")
@@ -66,10 +68,12 @@ def shown(setting: Setting, reading: Reading) -> tuple[str, str]:
         return "The heat pump", "on" if reading.on else "off"
     if setting is Setting.MODE:
         if not reading.on:
+            # RULE: asked about its mode a unit that is off is said to be off
             return "The heat pump", "off"
         return "The heat pump", DOING[reading.mode] if reading.mode else "on, in a mode I cannot read"
     if setting is Setting.TEMPERATURE:
         if reading.set_temp is None:
+            # RULE: a set temperature that cannot be read is said so
             return "The heat pump", "set to a temperature I cannot read"
         return "The heat pump", f"set to {degrees(reading.set_temp)}"
     return "The fan", f"on {reading.fan}" if reading.fan else "at a speed I cannot read"
@@ -108,6 +112,7 @@ def done(change: Change, reading: Reading) -> str:
 
 def not_confirmed(change: Change, reading: Reading | None) -> str:
     """The change was sent, but the unit, read back, does not show it."""
+    # RULE: a change sent but not read back says to ask again
     if reading is None:
         return (
             "I sent the change, but it is not confirmed: I could not read the heat pump back. "

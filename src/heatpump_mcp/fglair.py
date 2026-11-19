@@ -282,6 +282,7 @@ class FglairUnit:
                 fan=_FANS.get(FanSpeed(device.fan_speed)),
             )
         except (*CLOUD_ERRORS, DeviceOffline):
+            # RULE: a cloud error while reading means the unit cannot be read
             raise UnitUnavailableError from None
         self._device = device
         return reading
@@ -302,6 +303,7 @@ class FglairUnit:
         except UnitUnavailableError as error:
             raise ChangeNotSentError(str(error)) from None
         except CLOUD_ERRORS:
+            # RULE: a cloud error while getting ready means nothing was sent
             raise ChangeNotSentError from None
 
     async def apply(self, change: Change) -> None:
@@ -312,6 +314,7 @@ class FglairUnit:
         except UnitUnavailableError as error:
             raise ChangeNotSentError(str(error)) from None
         except CLOUD_ERRORS:
+            # RULE: a cloud error before a change is sent means it was not sent
             raise ChangeNotSentError from None
         try:
             await _send(device, change)
@@ -334,6 +337,7 @@ async def _send(device: Any, change: Change) -> None:  # noqa: ANN401 - a librar
     elif change.setting is Setting.FAN and isinstance(value, Fan):
         await device.async_set_fan_speed(FanSpeed[value.name])
     else:
+        # RULE: a change whose value does not fit its setting is never sent
         raise KeyError(change.setting)
 
 

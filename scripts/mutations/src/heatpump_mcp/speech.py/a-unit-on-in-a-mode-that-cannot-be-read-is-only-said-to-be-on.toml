@@ -1,0 +1,5 @@
+[[rule]]
+name = "a unit on in a mode that cannot be read is only said to be on"
+file = "src/heatpump_mcp/speech.py"
+find = '^\s*first = "The heat pump is on\."$'
+replace = 'first = "The heat pump is off."'

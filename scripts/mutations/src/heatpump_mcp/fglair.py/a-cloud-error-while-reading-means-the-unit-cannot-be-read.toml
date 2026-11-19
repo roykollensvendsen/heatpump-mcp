@@ -1,0 +1,5 @@
+[[rule]]
+name = "a cloud error while reading means the unit cannot be read"
+file = "src/heatpump_mcp/fglair.py"
+find = '^\s*raise UnitUnavailableError from None$'
+replace = 'pass'

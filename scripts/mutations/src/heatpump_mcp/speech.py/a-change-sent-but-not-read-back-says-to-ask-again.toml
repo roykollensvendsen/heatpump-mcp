@@ -1,0 +1,5 @@
+[[rule]]
+name = "a change sent but not read back says to ask again"
+file = "src/heatpump_mcp/speech.py"
+find = '^\s*if reading is None:$'
+replace = 'if False:'

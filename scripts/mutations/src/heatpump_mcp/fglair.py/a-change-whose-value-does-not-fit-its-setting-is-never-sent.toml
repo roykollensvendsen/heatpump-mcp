@@ -1,0 +1,5 @@
+[[rule]]
+name = "a change whose value does not fit its setting is never sent"
+file = "src/heatpump_mcp/fglair.py"
+find = '^\s*raise KeyError\(change\.setting\)$'
+replace = 'return'
