@@ -144,6 +144,17 @@ def test_the_hook_form_drops_comments_by_the_clone_s_own_comment_character(tmp_p
     assert no_session_links.main() == 0
 
 
+def test_a_hung_git_config_is_read_as_auto_and_said(monkeypatch, capsys):
+    """Refusing is the safe side, and a traceback would not say why."""
+
+    def hangs(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs.get("timeout"))
+
+    monkeypatch.setattr(no_session_links.subprocess, "run", hangs)
+    assert no_session_links.comment_character() is None
+    assert "git config" in capsys.readouterr().err
+
+
 def test_with_a_comment_character_git_picks_itself_the_comment_lines_are_judged_too(tmp_path, monkeypatch):
     """Under `auto` git may keep the `#` lines, so the hook can't drop them unread."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, timeout=SECONDS)
