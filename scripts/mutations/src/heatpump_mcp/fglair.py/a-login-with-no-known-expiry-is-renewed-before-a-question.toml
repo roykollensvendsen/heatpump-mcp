@@ -1,0 +1,5 @@
+[[rule]]
+name = "a login with no known expiry is renewed before a question"
+file = "src/heatpump_mcp/fglair.py"
+find = '^\s*return True$'
+replace = 'return False'

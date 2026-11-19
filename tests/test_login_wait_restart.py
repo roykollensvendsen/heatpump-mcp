@@ -152,3 +152,10 @@ def test_a_wait_written_while_the_clock_was_ahead_is_no_wait(tmp_path, login):
     api = Refusing()
     _refused(_unit(api, time.time, LoginWait(wait, login_files=[login])).read)
     assert api.tries == 1
+
+
+def test_a_login_file_that_is_missing_never_ends_a_wait(tmp_path):
+    wait = tmp_path / "login-wait"
+    end = time.time() + 600
+    LoginWait(wait).begin(end)
+    assert LoginWait(wait, login_files=[tmp_path / "missing"]).end() == pytest.approx(end)
