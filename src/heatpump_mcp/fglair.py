@@ -57,6 +57,7 @@ def _renew_due(api: Any) -> bool:  # noqa: ANN401 - the library's AylaApi
     """Whether a reading should renew the token now, ahead of the library's window."""
     expires = api.auth_expiration
     if expires is None:
+        # RULE: a login with no known expiry is renewed before a question
         return True
     # The library compares with its own naive datetime.now(); the expiry's class gives it.
     left: float = (expires - type(expires).now()).total_seconds()
@@ -157,6 +158,7 @@ def _changed_at(path: pathlib.Path) -> int:
     try:
         return path.stat().st_mtime_ns
     except OSError:
+        # RULE: a login file that is missing never ends a wait
         return 0
 
 

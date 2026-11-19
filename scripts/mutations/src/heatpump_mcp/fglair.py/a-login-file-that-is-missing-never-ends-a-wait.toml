@@ -1,0 +1,5 @@
+[[rule]]
+name = "a login file that is missing never ends a wait"
+file = "src/heatpump_mcp/fglair.py"
+find = '^\s*return 0$'
+replace = 'return 2**62'

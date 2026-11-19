@@ -339,3 +339,23 @@ def test_a_change_whose_value_does_not_fit_its_setting_is_never_sent():
     with pytest.raises(ChangeNotSupportedError):
         within(_unit(FakeApi(device)).apply(Change(Setting.MODE, 22.5)))
     assert device.calls == []
+
+
+class _NoKnownExpiry(FakeApi):
+    @property
+    def auth_expiration(self):
+        return None
+
+
+def test_a_login_with_no_known_expiry_is_renewed_before_a_question():
+    api = _NoKnownExpiry()
+    unit = _unit(api)
+    _read(unit)
+    _read(unit)
+    assert (api.sign_ins, api.refreshes) == (1, 1)
+
+
+def test_only_a_fujitsu_unit_is_taken_for_a_heat_pump():
+    from heatpump_mcp.fglair import _is_heat_pump  # noqa: PLC0415
+
+    assert not _is_heat_pump(FakeDevice())
